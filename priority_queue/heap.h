@@ -6,13 +6,13 @@
 
 typedef struct heap_inst heap_inst_t;
 typedef struct heap_node{
-    size_t prior;
+    int prior;
     size_t id;
 
     void *data;
 } heap_node_t;
 
-heap_inst_t* heap_allocate();
+heap_inst_t* heap_allocate(void);
 void heap_deallocate(heap_inst_t*);
 
 int heap_add_item(heap_inst_t *heap, void* item, int priority, heap_node_t* out);

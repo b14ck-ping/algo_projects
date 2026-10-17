@@ -6,8 +6,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native -Wall -Wextra -Wpedantic -fsanitize=address,undefined")
-
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -march=native -Wall -Wextra -Wpedantic")
+#-fsanitize=address,undefined
 set(SOURCE prior_queue.c heap.c hash_table.c)
 set(HEADER prior_queue.h heap.h hash_table.h)
 
