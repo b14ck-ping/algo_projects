@@ -1,0 +1,6 @@
+CompileFlags:
+  CompilationDatabase: priority_queue/build
+Index:
+  Background: Build
+Completion:
+  AllScopes: true
