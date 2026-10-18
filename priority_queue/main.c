@@ -360,13 +360,13 @@ int test_hash_table(void){
     hash_table_free(ht2);
 
     ht2 = hash_table_create();
-    hash_table_insert(ht, 39, 100);
-    hash_table_insert(ht, 79, 200);
+    hash_table_insert(ht2, 39, 100);
+    hash_table_insert(ht2, 79, 200);
 
-    assert(hash_table_remove(ht, 39) == 0);
+    assert(hash_table_remove(ht2, 39) == 0);
 
     size_t value;
-    assert(hash_table_get(ht, 79, &value) == 0);
+    assert(hash_table_get(ht2, 79, &value) == 0);
     assert(value == 200);
     hash_table_free(ht2);
 
