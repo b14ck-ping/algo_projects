@@ -286,8 +286,8 @@ int test_hash_table(void){
     // Check without increasing
     printf("Add values to hash table\n");
     for (uint32_t i = 0; i < 20; ++i){
-        int ret = hash_table_insert(ht, i, i*5);
-        if (ret)
+        ret = hash_table_insert(ht, i, i*5);
+        if (ret )
             goto exit;
         // printf("hash_table inserted key %d value %zu\n", i, (size_t)i*5);
     }
@@ -295,7 +295,7 @@ int test_hash_table(void){
     for (uint32_t i = 0; i < 20; ++i){
         size_t val = 0;
         // printf("hash_table get value by key %d\n", i);
-        int ret = hash_table_get(ht, i, &val);
+        ret = hash_table_get(ht, i, &val);
         if (ret && ret != -50){
             printf("hash_table_get returned %d\n", ret);
             goto exit;
@@ -312,16 +312,16 @@ int test_hash_table(void){
     // check with realocation 
     printf("Add values to hash table\n");
     for (uint32_t i = 20; i < 60; ++i){
-        int ret = hash_table_insert(ht, i, i*5);
+        ret = hash_table_insert(ht, i, i*5);
         if (ret)
             goto exit;
-        printf("hash_table inserted key %d value %zu\n", i, (size_t)i*5);
+        // printf("hash_table inserted key %d value %zu\n", i, (size_t)i*5);
     }
 
     for (uint32_t i = 0; i < 60; ++i){
         size_t val = 0;
-        printf("hash_table get value by key %d\n", i);
-        int ret = hash_table_get(ht, i, &val);
+        // printf("hash_table get value by key %d\n", i);
+        ret = hash_table_get(ht, i, &val);
         if (ret && ret != -50){
             printf("hash_table_get returned %d\n", ret);
             goto exit;
@@ -332,10 +332,15 @@ int test_hash_table(void){
             printf("Wrong value %zu at key %d\n", val, i);
             goto exit;
         }  
-        printf("hash_table got value %zu\n", val);
+        // printf("hash_table got value %zu\n", val);
     }
 
-
+    hash_table_insert(ht, 7, 100);
+    ret = hash_table_insert(ht, 7, 200);
+    assert(ret == -100);
+    
+    if(ret == -100)
+        ret = 0;
 exit:
     hash_table_free(ht);
     return ret;

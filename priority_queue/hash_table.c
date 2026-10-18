@@ -35,15 +35,23 @@ static inline int get_probe(uint32_t key)
     return ++key;
 }
 
-static inline void _insert(hash_table_t* ht, uint32_t key, size_t value, size_t i)
+static inline int _insert(hash_table_t* ht, uint32_t key, size_t value, size_t i)
 {
+    if (((float)(ht->count + 1)/ht->capacity) > MAX_LOAD_FACTOR){
+        int ret = increase_table(ht);
+        if (ret){
+            printf("Increasing of table returns non-zero status %d\n", ret);
+            return ret;
+        }
+            
+    }
+
     ht->buckets[i].value = value;
     ht->buckets[i].key = key;
     ht->buckets[i].state = SLOT_OCCUPIED;
     ht->count++;
     ht->load_factor = (float)ht->count/ht->capacity;
-    if (ht->load_factor > MAX_LOAD_FACTOR)
-        increase_table(ht);
+    return 0;
 }
 
 static inline void _remove(hash_table_t* ht, size_t i)
@@ -143,9 +151,11 @@ hash_table_t* hash_table_create(void)
         return NULL;
 
     ht->buckets = (hash_entry_t*)calloc(START_CAPACITY, sizeof(hash_entry_t));
-    if (!ht->buckets)
+    if (!ht->buckets){
+        free(ht->buckets);
         return NULL;
-
+    }
+       
     ht->capacity = START_CAPACITY;
     
     return ht;
@@ -173,8 +183,7 @@ int hash_table_insert(hash_table_t* ht, uint32_t key, size_t value)
     if (ht->buckets[idx].state == SLOT_DELETED){
         size_t dup_idx = find_key_idx(ht, idx + 1, key);
         if (ht->buckets[dup_idx].state == SLOT_EMPTY){
-            _insert(ht, key, value, idx);
-            return 0;
+            return _insert(ht, key, value, idx);
         } else if (ht->buckets[dup_idx].state == SLOT_OCCUPIED &&
                             ht->buckets[dup_idx].key == key) {
             return -100; // duplicate
@@ -182,8 +191,10 @@ int hash_table_insert(hash_table_t* ht, uint32_t key, size_t value)
             return -200; // Table is full
         }
     } else if (ht->buckets[idx].state == SLOT_EMPTY) {
-        _insert(ht, key, value, idx);
-        return 0;
+        return _insert(ht, key, value, idx);
+    } else if (ht->buckets[idx].state == SLOT_OCCUPIED &&
+                ht->buckets[idx].key == key){
+        return -100; // duplicate
     } else {
         return -200; // Table is full
     }
