@@ -37,15 +37,6 @@ static inline int get_probe(uint32_t key)
 
 static inline int _insert(hash_table_t* ht, uint32_t key, size_t value, size_t i)
 {
-    if (((float)(ht->count + 1)/ht->capacity) > MAX_LOAD_FACTOR){
-        int ret = increase_table(ht);
-        if (ret){
-            printf("Increasing of table returns non-zero status %d\n", ret);
-            return ret;
-        }
-            
-    }
-
     ht->buckets[i].value = value;
     ht->buckets[i].key = key;
     ht->buckets[i].state = SLOT_OCCUPIED;
@@ -176,6 +167,15 @@ int hash_table_insert(hash_table_t* ht, uint32_t key, size_t value)
 {
     if (!ht)
         return -1;
+
+    if (((float)(ht->count + 1)/ht->capacity) > MAX_LOAD_FACTOR){
+        int ret = increase_table(ht);
+        if (ret){
+            printf("Increasing of table returns non-zero status %d\n", ret);
+            return ret;
+        }
+            
+    }
 
     uint32_t hash = get_hash(ht, key);
     size_t idx = find_key_or_deleted_idx(ht, hash, key);
