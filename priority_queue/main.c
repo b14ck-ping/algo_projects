@@ -342,6 +342,8 @@ int test_hash_table(void){
     if(ret == -100)
         ret = 0;
 
+    
+
     printf("Check deleted table\n");
     hash_table_t *ht2 = hash_table_create();
 
@@ -356,6 +358,18 @@ int test_hash_table(void){
     ret = hash_table_insert(ht2, 39, 777);
     assert(!ret);
     hash_table_free(ht2);
+
+    ht2 = hash_table_create();
+    hash_table_insert(ht, 39, 100);
+    hash_table_insert(ht, 79, 200);
+
+    assert(hash_table_remove(ht, 39) == 0);
+
+    size_t value;
+    assert(hash_table_get(ht, 79, &value) == 0);
+    assert(value == 200);
+    hash_table_free(ht2);
+
 exit:
     hash_table_free(ht);
     return ret;

@@ -49,7 +49,8 @@ static inline void _remove(hash_table_t* ht, size_t i)
 {
     ht->buckets[i].value = 0;
     ht->buckets[i].key = 0;
-    ht->buckets[i].state = ht->buckets[i+1].state == SLOT_EMPTY ? SLOT_EMPTY : SLOT_DELETED;
+    size_t next = (i + 1) % ht->capacity;
+    ht->buckets[i].state = ht->buckets[next].state == SLOT_EMPTY ? SLOT_EMPTY : SLOT_DELETED;
     ht->count--;
     ht->load_factor = (float)ht->count/ht->capacity;
 }
