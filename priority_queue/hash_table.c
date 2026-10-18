@@ -248,7 +248,7 @@ int hash_table_remove(hash_table_t* ht, uint32_t key)
     }
 }
 
-ssize_t hash_table_count(hash_table_t* ht)
+size_t hash_table_count(hash_table_t* ht)
 {
     if (ht) return ht->count;
 }

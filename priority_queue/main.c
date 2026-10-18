@@ -148,7 +148,7 @@ static int test_random_case(size_t n,
                                    1000 + i) == 0);
     }
 
-    HT_CHECK(hash_table_count(ht) == (ssize_t)n);
+    HT_CHECK(hash_table_count(ht) == (size_t)n);
 
     for (size_t i = 0; i < n; ++i)
         HT_CHECK(expect_key(ht, keys[i], 1, 1000 + i));
@@ -177,7 +177,7 @@ static int test_random_case(size_t n,
     }
 
     HT_CHECK(hash_table_count(ht) ==
-             (ssize_t)(n - n / 2));
+             (size_t)(n - n / 2));
 
     // 5. Проверяем ВСЕ ключи, а не только удалённые.
     for (size_t i = 0; i < n; ++i) {
@@ -204,7 +204,7 @@ static int test_random_case(size_t n,
         }
     }
 
-    HT_CHECK(hash_table_count(ht) == (ssize_t)n);
+    HT_CHECK(hash_table_count(ht) == (size_t)n);
 
     // 9. Проверяем всё после повторной вставки.
     for (size_t i = 0; i < n; ++i) {
