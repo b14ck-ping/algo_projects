@@ -32,7 +32,7 @@ static inline uint32_t get_hash (hash_table_t* ht, uint32_t key)
 
 static inline int get_probe(uint32_t key)
 {
-    return key++;
+    return ++key;
 }
 
 static inline void _insert(hash_table_t* ht, uint32_t key, size_t value, size_t i)
@@ -80,14 +80,16 @@ static size_t find_key_idx(hash_table_t* ht, uint32_t start_idx, uint32_t key){
     
     for (size_t i = start_idx; i < ht->capacity; i = get_probe(i)){
         if (ht->buckets[i].state == SLOT_EMPTY ||
-            ht->buckets[i].key == key){
+            (ht->buckets[i].state == SLOT_OCCUPIED &&
+            ht->buckets[i].key == key)){
             return i;
         }
     }
 
     for (size_t i = 0; i < start_idx; i = get_probe(i)){
         if (ht->buckets[i].state == SLOT_EMPTY ||
-            ht->buckets[i].key == key){
+            (ht->buckets[i].state == SLOT_OCCUPIED &&
+            ht->buckets[i].key == key)){
             return i;
         }
     }
@@ -99,7 +101,8 @@ static int rehash_table(hash_table_t* ht_old, hash_table_t* ht_new)
 {
     for (uint32_t idx = 0; idx < ht_old->capacity; ++idx){
         int ret = 0;
-        if (hash_table_insert(ht_new, ht_old->buckets[idx].key, ht_old->buckets[idx].value))
+        if (ht_old->buckets[idx].state == SLOT_OCCUPIED && 
+            (ret = hash_table_insert(ht_new, ht_old->buckets[idx].key, ht_old->buckets[idx].value)) != 0)
             return ret;
     }
     return 0;
@@ -129,9 +132,6 @@ static int increase_table(hash_table_t* ht)
 
     free(ht->buckets);
     *ht = ht_new;
-    // ht->capacity = ht_new.capacity;
-    // ht->count = ht_new.count;
-    // ht->load_factor = ht_new.load_factor;
 
     return 0;
 }
