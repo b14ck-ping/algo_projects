@@ -287,14 +287,14 @@ int test_hash_table(void){
     printf("Add values to hash table\n");
     for (uint32_t i = 0; i < 20; ++i){
         ret = hash_table_insert(ht, i, i*5);
-        if (ret )
+        if (ret)
             goto exit;
-        // printf("hash_table inserted key %d value %zu\n", i, (size_t)i*5);
+        printf("hash_table inserted key %d value %zu\n", i, (size_t)i*5);
     }
 
     for (uint32_t i = 0; i < 20; ++i){
         size_t val = 0;
-        // printf("hash_table get value by key %d\n", i);
+        printf("hash_table get value by key %d\n", i);
         ret = hash_table_get(ht, i, &val);
         if (ret && ret != -50){
             printf("hash_table_get returned %d\n", ret);
@@ -338,9 +338,24 @@ int test_hash_table(void){
     hash_table_insert(ht, 7, 100);
     ret = hash_table_insert(ht, 7, 200);
     assert(ret == -100);
-    
+
     if(ret == -100)
         ret = 0;
+
+    printf("Check deleted table\n");
+    hash_table_t *ht2 = hash_table_create();
+
+    for (uint32_t i = 0; i < 40; ++i) {
+        assert(hash_table_insert(ht2, i, i) == 0);
+        assert(hash_table_remove(ht2, i) == 0);
+    }
+
+    assert(hash_table_count(ht2) == 0);
+
+    // Все 40 ячеек теперь DELETED.
+    ret = hash_table_insert(ht2, 39, 777);
+    assert(!ret);
+    hash_table_free(ht2);
 exit:
     hash_table_free(ht);
     return ret;

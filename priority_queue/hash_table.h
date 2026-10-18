@@ -17,6 +17,6 @@ int hash_table_insert(hash_table_t* ht, uint32_t key, size_t value);
 int hash_table_get(hash_table_t* ht, uint32_t key, size_t *out);
 int hash_table_update(hash_table_t* ht, uint32_t key, size_t new_val);
 int hash_table_remove(hash_table_t* ht, uint32_t key);
-ssize_t hash_table_count(hash_table_t* ht);
+size_t hash_table_count(hash_table_t* ht);
 
 #endif //HASH_TABLE_H

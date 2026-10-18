@@ -143,7 +143,7 @@ hash_table_t* hash_table_create(void)
 
     ht->buckets = (hash_entry_t*)calloc(START_CAPACITY, sizeof(hash_entry_t));
     if (!ht->buckets){
-        free(ht->buckets);
+        free(ht);
         return NULL;
     }
        
@@ -181,8 +181,8 @@ int hash_table_insert(hash_table_t* ht, uint32_t key, size_t value)
     size_t idx = find_key_or_deleted_idx(ht, hash, key);
 
     if (ht->buckets[idx].state == SLOT_DELETED){
-        size_t dup_idx = find_key_idx(ht, idx + 1, key);
-        if (ht->buckets[dup_idx].state == SLOT_EMPTY){
+        size_t dup_idx = find_key_idx(ht, idx, key);
+        if (ht->buckets[dup_idx].state == SLOT_EMPTY || dup_idx == idx){
             return _insert(ht, key, value, idx);
         } else if (ht->buckets[dup_idx].state == SLOT_OCCUPIED &&
                             ht->buckets[dup_idx].key == key) {
@@ -250,8 +250,5 @@ int hash_table_remove(hash_table_t* ht, uint32_t key)
 
 ssize_t hash_table_count(hash_table_t* ht)
 {
-    if (!ht)
-        return -1;
-
-    return ht->count;
+    if (ht) return ht->count;
 }
