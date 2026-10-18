@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 typedef enum {
     SLOT_EMPTY = 0,
     SLOT_OCCUPIED,
@@ -30,26 +31,25 @@ static inline uint32_t get_hash (hash_table_t* ht, uint32_t key)
     return (size_t)key % ht->capacity;
 }
 
-static inline int get_probe(uint32_t key)
+static inline size_t get_probe(size_t key)
 {
     return ++key;
 }
 
-static inline int _insert(hash_table_t* ht, uint32_t key, size_t value, size_t i)
+static inline void _insert(hash_table_t* ht, uint32_t key, size_t value, size_t i)
 {
     ht->buckets[i].value = value;
     ht->buckets[i].key = key;
     ht->buckets[i].state = SLOT_OCCUPIED;
     ht->count++;
     ht->load_factor = (float)ht->count/ht->capacity;
-    return 0;
 }
 
 static inline void _remove(hash_table_t* ht, size_t i)
 {
     ht->buckets[i].value = 0;
     ht->buckets[i].key = 0;
-    ht->buckets[i].state = SLOT_DELETED;
+    ht->buckets[i].state = ht->buckets[i+1].state == SLOT_EMPTY ? SLOT_EMPTY : SLOT_DELETED;
     ht->count--;
     ht->load_factor = (float)ht->count/ht->capacity;
 }
@@ -112,9 +112,9 @@ static int increase_table(hash_table_t* ht)
     if (!ht)
         return -1;
 
-    size_t new_capacity = ht->capacity*sizeof(hash_entry_t) > SIZE_MAX/2 ? 
-                                                SIZE_MAX/sizeof(hash_entry_t) : 
-                                                ht->capacity*2;
+    size_t new_capacity = ht->capacity > SIZE_MAX/2 ? 
+                                    SIZE_MAX : 
+                                    ht->capacity*2;
 
     hash_table_t ht_new = {0};
     ht_new.capacity = new_capacity;
@@ -168,7 +168,11 @@ int hash_table_insert(hash_table_t* ht, uint32_t key, size_t value)
     if (!ht)
         return -1;
 
-    if (((float)(ht->count + 1)/ht->capacity) > MAX_LOAD_FACTOR){
+    
+    size_t out = 0;
+    if (hash_table_get(ht, key, &out) && 
+        ((float)(ht->count + 1)/ht->capacity) > MAX_LOAD_FACTOR){
+        printf("Increase table \n");
         int ret = increase_table(ht);
         if (ret){
             printf("Increasing of table returns non-zero status %d\n", ret);
@@ -183,7 +187,8 @@ int hash_table_insert(hash_table_t* ht, uint32_t key, size_t value)
     if (ht->buckets[idx].state == SLOT_DELETED){
         size_t dup_idx = find_key_idx(ht, idx, key);
         if (ht->buckets[dup_idx].state == SLOT_EMPTY || dup_idx == idx){
-            return _insert(ht, key, value, idx);
+            _insert(ht, key, value, idx);
+            return 0;
         } else if (ht->buckets[dup_idx].state == SLOT_OCCUPIED &&
                             ht->buckets[dup_idx].key == key) {
             return -100; // duplicate
@@ -191,7 +196,8 @@ int hash_table_insert(hash_table_t* ht, uint32_t key, size_t value)
             return -200; // Table is full
         }
     } else if (ht->buckets[idx].state == SLOT_EMPTY) {
-        return _insert(ht, key, value, idx);
+        _insert(ht, key, value, idx);
+        return 0;
     } else if (ht->buckets[idx].state == SLOT_OCCUPIED &&
                 ht->buckets[idx].key == key){
         return -100; // duplicate
@@ -250,5 +256,8 @@ int hash_table_remove(hash_table_t* ht, uint32_t key)
 
 size_t hash_table_count(hash_table_t* ht)
 {
-    if (ht) return ht->count;
+    if (ht) 
+        return ht->count;
+
+    return 0;
 }
