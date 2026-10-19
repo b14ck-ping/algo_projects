@@ -1,5 +1,5 @@
 CompileFlags:
-  CompilationDatabase: priority_queue/build
+  CompilationDatabase: build
 Index:
   Background: Build
 Completion:

@@ -1,11 +1,9 @@
 {
-    "cmake.sourceDirectory": "${workspaceFolder}/priority_queue",
-    "cmake.buildDirectory": "${workspaceFolder}/priority_queue/build",
-    "cmake.generator": "Ninja",
-    "clangd.path": "C:/Users/happy-sloth/AppData/Roaming/Code/User/globalStorage/llvm-vs-code-extensions.vscode-clangd/install/22.1.6/clangd_22.1.6/bin/clangd.exe",
+    "cmake.sourceDirectory": "${workspaceFolder}",
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.configureOnOpen": true,
     "clangd.arguments": [
-        "--background-index",
-        "--query-driver=D:/gcc/bin/gcc.exe"
+        "--background-index"
     ],
     "C_Cpp.intelliSenseEngine": "disabled"
 }
