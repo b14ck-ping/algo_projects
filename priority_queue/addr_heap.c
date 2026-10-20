@@ -188,7 +188,7 @@ void addr_heap_deallocate(addr_heap_inst_t *heap)
 
 int addr_heap_add_item(addr_heap_inst_t *heap, void* data, int priority, addr_heap_handle_t** out)
 {
-    if (!heap || !heap->arr)
+    if (!heap || !heap->arr || !out)
         return -1;
 
     addr_heap_handle_t *handle = (addr_heap_handle_t *)malloc(sizeof(addr_heap_handle_t));

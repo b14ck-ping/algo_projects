@@ -11,7 +11,7 @@ typedef enum {
 
 typedef struct {
     uint32_t key;
-    size_t value;
+    void* value;
     slot_state_t state;
 } hash_entry_t;
 typedef struct hash_table{
@@ -36,7 +36,7 @@ static inline size_t get_probe(size_t key)
     return ++key;
 }
 
-static inline void _insert(hash_table_t* ht, uint32_t key, size_t value, size_t i)
+static inline void _insert(hash_table_t* ht, uint32_t key, void* value, size_t i)
 {
     ht->buckets[i].value = value;
     ht->buckets[i].key = key;
@@ -164,13 +164,13 @@ void hash_table_free(hash_table_t* ht)
     free(ht);
 }
 
-int hash_table_insert(hash_table_t* ht, uint32_t key, size_t value)
+int hash_table_insert(hash_table_t* ht, uint32_t key, void* value)
 {
     if (!ht)
         return -1;
 
     
-    size_t out = 0;
+    void* out = 0;
     if (hash_table_get(ht, key, &out) && 
         ((float)(ht->count + 1)/ht->capacity) > MAX_LOAD_FACTOR){
         printf("Increase table \n");
@@ -207,7 +207,7 @@ int hash_table_insert(hash_table_t* ht, uint32_t key, size_t value)
     }
 }
 
-int hash_table_get(hash_table_t* ht, uint32_t key, size_t *out)
+int hash_table_get(hash_table_t* ht, uint32_t key, void** out)
 {
     if (!ht || !out)
         return -1;
@@ -223,7 +223,7 @@ int hash_table_get(hash_table_t* ht, uint32_t key, size_t *out)
     }
 }
 
-int hash_table_update(hash_table_t* ht, uint32_t key, size_t new_val)
+int hash_table_update(hash_table_t* ht, uint32_t key, void* new_val)
 {
     if (!ht)
         return -1;
