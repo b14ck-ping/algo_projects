@@ -172,6 +172,10 @@ addr_heap_inst_t* addr_heap_allocate(void)
 
 void addr_heap_deallocate(addr_heap_inst_t *heap)
 {
+
+    for (size_t i = 0;  i < heap->count; ++i)
+        _invalidate_handle(heap->arr[i].handle);
+
     free(heap->arr);
     free(heap);
 }
@@ -248,9 +252,15 @@ int addr_heap_pop(addr_heap_inst_t *heap, addr_heap_item_t* out)
     out->data = heap->arr[0].data;
     _invalidate_handle(out->handle);
 
-    heap->arr[0] = heap->arr[heap->count-1];
+    if (heap->count > 1){
+        heap->arr[0] = heap->arr[heap->count-1];
+        heap->arr[0].handle->idx = heap->count-1;
+        heap->count--;
+        shift_down(heap, 0);
+        return 0;
+    }
     heap->count--;
-    shift_down(heap, 0);
+
     return 0;
 }
 
@@ -271,20 +281,22 @@ void addr_heap_dump_heap(addr_heap_inst_t *heap){
 
 static void shift_specific_item(addr_heap_inst_t *heap, size_t idx)
 {
-    if (heap->count < 2 || idx == 0) return;
+    if (heap->count < 2 ) return;
 
+    size_t left_child = _left_child(idx);
+    size_t right_child = _right_child(idx);
+    if (idx == 0 || (left_child < heap->count && _compare_priorities(&heap->arr[idx], &heap->arr[left_child]) == -1) ||
+        (right_child < heap->count && _compare_priorities(&heap->arr[idx], &heap->arr[right_child]) == -1)){
+        
+        shift_down(heap, idx);
+        return;
+    }
+        
     size_t parent = _parent(idx);
     int ret = _compare_priorities(&heap->arr[idx], &heap->arr[parent]);
     if (ret == 1){
         shift_up(heap, idx);
-        return;
     }
-
-    size_t left_child = _left_child(idx);
-    size_t right_child = _right_child(idx);
-    if ((left_child < heap->count && _compare_priorities(&heap->arr[idx], &heap->arr[left_child]) == -1) ||
-        (right_child < heap->count && _compare_priorities(&heap->arr[idx], &heap->arr[right_child]) == -1))
-        shift_down(heap, idx);
 } 
 
 int addr_heap_set_priority(addr_heap_inst_t *heap, int priority, addr_heap_handle_t* handle)
@@ -347,12 +359,14 @@ int addr_heap_remove_item(addr_heap_inst_t *heap, addr_heap_handle_t* handle,  a
     out->data = heap->arr[handle->idx].data;
 
     if (heap->count < 2){
+        _invalidate_handle(out->handle);
         heap->count--;
         return 0;
     } 
 
     _invalidate_handle(out->handle);
     heap->arr[handle->idx] = heap->arr[heap->count-1];
+    heap->arr[handle->idx].handle->idx = handle->idx;
     heap->count--;
     shift_specific_item(heap, handle->idx);
     
