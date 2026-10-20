@@ -2,6 +2,21 @@
     "cmake.sourceDirectory": "${workspaceFolder}",
     "cmake.buildDirectory": "${workspaceFolder}/build",
     "cmake.configureOnOpen": true,
+    "cmake.options.advanced": {
+        "debug": {
+            "statusBarVisibility": "visible"
+        }
+    },
+    "cmake.debugConfig": {
+        "MIMode": "gdb",
+        "miDebuggerPath": "/usr/bin/gdb",
+        "environment": [
+            {
+                "name": "ASAN_OPTIONS",
+                "value": "detect_leaks=0"
+            }
+        ]
+    },
     "clangd.arguments": [
         "--background-index"
     ],

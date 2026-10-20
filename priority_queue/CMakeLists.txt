@@ -12,11 +12,16 @@ set(HEADER prior_queue.h addr_heap.h heap.h hash_table.h)
 add_executable(priority_queue main.c ${SOURCE} ${HEADER})
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(priority_queue PRIVATE -O3 -march=native -Wall -Wextra -Wpedantic)
+    target_compile_options(priority_queue PRIVATE
+        $<$<CONFIG:Debug>:-O0>
+        $<$<NOT:$<CONFIG:Debug>>:-O3>
+        -march=native -Wall -Wextra -Wpedantic)
     if(UNIX)
         target_compile_options(priority_queue PRIVATE -fsanitize=address,undefined)
         target_link_libraries(priority_queue PRIVATE -fsanitize=address,undefined)
     endif()
 elseif(MSVC)
-    target_compile_options(priority_queue PRIVATE /W4 /O2)
+    target_compile_options(priority_queue PRIVATE /W4
+        $<$<CONFIG:Debug>:/Od>
+        $<$<NOT:$<CONFIG:Debug>>:/O2>)
 endif()

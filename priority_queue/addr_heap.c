@@ -62,14 +62,15 @@ static inline size_t _parent(size_t i)
 static inline void _swap(addr_heap_inst_t *heap, size_t x, size_t y) {
     addr_heap_node_t tmp = heap->arr[x];
     heap->arr[x] = heap->arr[y];
+    heap->arr[x].handle->idx = x; 
     heap->arr[y] = tmp;
+    heap->arr[y].handle->idx = y; 
 }
 
 
-static void shift_up(addr_heap_inst_t *heap)
+static void shift_up(addr_heap_inst_t *heap, size_t item_ind)
 {
-    if (heap->count < 2) return;
-    size_t item_ind = heap->count - 1;
+    if (heap->count < 2 || !item_ind) return;
 
     while (item_ind != 0 ){
         size_t parent = _parent(item_ind);
@@ -85,10 +86,9 @@ static void shift_up(addr_heap_inst_t *heap)
 }
 
 
-static void shift_down(addr_heap_inst_t *heap)
+static void shift_down(addr_heap_inst_t *heap, size_t item_ind)
 {
     if (heap->count < 2) return;
-    size_t item_ind = 0;
     size_t left_child = _left_child(item_ind);
     size_t right_child = _right_child(item_ind);
     while (item_ind < heap->count && (left_child < heap->count || right_child < heap->count)){
@@ -130,6 +130,28 @@ static void shift_down(addr_heap_inst_t *heap)
     }
 }
 
+static int realloc_array(addr_heap_inst_t *heap)
+{
+    size_t new_capacity = heap->capacity*sizeof(addr_heap_node_t) > SIZE_MAX/2 ? 
+                                                SIZE_MAX/sizeof(addr_heap_node_t) : 
+                                                heap->capacity*2;
+    size_t new_size =  new_capacity*sizeof(addr_heap_node_t); 
+
+    addr_heap_node_t * new_arr = (addr_heap_node_t*)realloc(heap->arr, new_size);
+    if (!new_arr)
+        return -3;
+
+    heap->capacity = new_capacity;
+    heap->arr = new_arr;
+    return 0;
+}
+
+static inline void _invalidate_handle(addr_heap_handle_t* handle)
+{
+    handle->owner = NULL;
+    handle->state = HANDLE_INVALID;
+}
+
 addr_heap_inst_t* addr_heap_allocate(void)
 {
     addr_heap_inst_t *buf = (addr_heap_inst_t *)calloc(1, sizeof(addr_heap_inst_t));
@@ -146,22 +168,6 @@ addr_heap_inst_t* addr_heap_allocate(void)
     buf->capacity = MIN_count;
 
     return buf;
-}
-
-static int realloc_array(addr_heap_inst_t *heap)
-{
-    size_t new_capacity = heap->capacity*sizeof(addr_heap_node_t) > SIZE_MAX/2 ? 
-                                                SIZE_MAX/sizeof(addr_heap_node_t) : 
-                                                heap->capacity*2;
-    size_t new_size =  new_capacity*sizeof(addr_heap_node_t); 
-
-    addr_heap_node_t * new_arr = (addr_heap_node_t*)realloc(heap->arr, new_size);
-    if (!new_arr)
-        return -3;
-
-    heap->capacity = new_capacity;
-    heap->arr = new_arr;
-    return 0;
 }
 
 void addr_heap_deallocate(addr_heap_inst_t *heap)
@@ -188,19 +194,24 @@ int addr_heap_add_item(addr_heap_inst_t *heap, void* data, int priority, addr_he
     buf.data = data;
     buf.handle = handle;
 
-    handle->idx = buf.sequence;
+   
 
     if (heap->count >= heap->capacity){
         int ret = realloc_array(heap);
-        if (ret)
+        if (ret){
+            free(handle);
             return ret;
+        }
     }
+
+    
     heap->arr[heap->count] = buf;
+    handle->idx = heap->count;
     heap->count++;
-    if (out && *out){
+    if (out){
         *out = handle;
     }
-    shift_up(heap);
+    shift_up(heap, heap->count -1);
     return 0;
 }
 
@@ -235,10 +246,11 @@ int addr_heap_pop(addr_heap_inst_t *heap, addr_heap_item_t* out)
     out->handle = heap->arr[0].handle;
     out->prior = heap->arr[0].prior;
     out->data = heap->arr[0].data;
+    _invalidate_handle(out->handle);
 
     heap->arr[0] = heap->arr[heap->count-1];
     heap->count--;
-    shift_down(heap);
+    shift_down(heap, 0);
     return 0;
 }
 
@@ -257,19 +269,94 @@ void addr_heap_dump_heap(addr_heap_inst_t *heap){
     }
 }
 
+static void shift_specific_item(addr_heap_inst_t *heap, size_t idx)
+{
+    if (heap->count < 2 || idx == 0) return;
+
+    size_t parent = _parent(idx);
+    int ret = _compare_priorities(&heap->arr[idx], &heap->arr[parent]);
+    if (ret == 1){
+        shift_up(heap, idx);
+        return;
+    }
+
+    size_t left_child = _left_child(idx);
+    size_t right_child = _right_child(idx);
+    if ((left_child < heap->count && _compare_priorities(&heap->arr[idx], &heap->arr[left_child]) == -1) ||
+        (right_child < heap->count && _compare_priorities(&heap->arr[idx], &heap->arr[right_child]) == -1))
+        shift_down(heap, idx);
+} 
+
 int addr_heap_set_priority(addr_heap_inst_t *heap, int priority, addr_heap_handle_t* handle)
 {
+    if (!heap || !handle)
+        return -1;
+
+    if(handle->state == HANDLE_INVALID)
+        return -6;
+
+    if (handle->owner != heap)
+        return -7;
+    
+    if (handle->idx >= heap->count)
+        return -8;
+
+    heap->arr[handle->idx].prior = priority;
+    shift_specific_item(heap, handle->idx);
+    return 0;
 
 }
 
 int addr_heap_get_item(addr_heap_inst_t *heap, addr_heap_handle_t* handle, addr_heap_item_t* out)
 {
+    if (!heap || !handle)
+        return -1;
 
+    if(handle->state == HANDLE_INVALID)
+        return -6;
+
+    if (handle->owner != heap)
+        return -7;
+    
+    if (handle->idx >= heap->count)
+        return -8;
+
+    out->prior = heap->arr[handle->idx].prior;
+    out->handle = heap->arr[handle->idx].handle;
+    out->data = heap->arr[handle->idx].data;
+
+    return 0;
 }
 
 int addr_heap_remove_item(addr_heap_inst_t *heap, addr_heap_handle_t* handle,  addr_heap_item_t* out)
 {
+    if (!heap || !handle)
+        return -1;
 
+    if(handle->state == HANDLE_INVALID)
+        return -6;
+
+    if (handle->owner != heap)
+        return -7;
+    
+    if (handle->idx >= heap->count)
+        return -8;
+
+    out->prior = heap->arr[handle->idx].prior;
+    out->handle = heap->arr[handle->idx].handle;
+    out->data = heap->arr[handle->idx].data;
+
+    if (heap->count < 2){
+        heap->count--;
+        return 0;
+    } 
+
+    _invalidate_handle(out->handle);
+    heap->arr[handle->idx] = heap->arr[heap->count-1];
+    heap->count--;
+    shift_specific_item(heap, handle->idx);
+    
+    return 0;
 }
 
 int addr_heap_free_handler(addr_heap_handle_t* handle)

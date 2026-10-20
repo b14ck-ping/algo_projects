@@ -4,8 +4,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
+
 #include "heap.h"
 #include "hash_table.h"
+#include "addr_heap.h"
 
 int test_heap(void)
 {
@@ -375,6 +378,184 @@ exit:
     return ret;
 }
 
+static unsigned long checks = 0;
+#define CHECK(cond) do { \
+    ++checks; \
+    if (!(cond)) { \
+        fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
+        exit(EXIT_FAILURE); \
+    } \
+} while (0)
+
+static void *payload(size_t i) { return (void *)(uintptr_t)(i + 1); }
+static void expect_item(addr_heap_item_t *item, void *data, int priority,
+                        addr_heap_handle_t *handle)
+{
+    CHECK(item->data == data);
+    CHECK(item->prior == priority);
+    CHECK(item->handle == handle);
+}
+
+static addr_heap_handle_t *add(addr_heap_inst_t *h, void *data, int priority)
+{
+    addr_heap_handle_t *handle = NULL;
+    CHECK(addr_heap_add_item(h, data, priority, &handle) == 0);
+    CHECK(handle != NULL);
+    return handle;
+}
+
+static void release(addr_heap_handle_t *handle)
+{
+    CHECK(addr_heap_free_handler(handle) == 0);
+}
+
+static void test_empty_and_single(void)
+{
+    addr_heap_inst_t *h = addr_heap_allocate();
+    CHECK(h != NULL);
+    CHECK(addr_heap_count(h) == 0);
+    addr_heap_item_t out = {0};
+    CHECK(addr_heap_peek_item(h, &out) != 0);
+    CHECK(addr_heap_pop(h, &out) != 0);
+
+    addr_heap_handle_t *a = add(h, payload(1), 7);
+    CHECK(addr_heap_count(h) == 1);
+    CHECK(addr_heap_peek_item(h, &out) == 0);
+    expect_item(&out, payload(1), 7, a);
+    CHECK(addr_heap_free_handler(a) != 0); /* active handle */
+    CHECK(addr_heap_pop(h, &out) == 0);
+    expect_item(&out, payload(1), 7, a);
+    CHECK(addr_heap_count(h) == 0);
+    CHECK(addr_heap_get_item(h, a, &out) != 0); /* inactive handle */
+    CHECK(addr_heap_set_priority(h, 11, a) != 0);
+    CHECK(addr_heap_remove_item(h, a, &out) != 0);
+    release(a);
+    addr_heap_deallocate(h);
+}
+
+static void test_priority_fifo(void)
+{
+    addr_heap_inst_t *h = addr_heap_allocate();
+    CHECK(h != NULL);
+    const int p[] = {5, -3, 5, INT_MAX, INT_MIN, 5, 12};
+    const size_t expected[] = {3, 6, 0, 2, 5, 1, 4};
+    addr_heap_handle_t *handles[7];
+    for (size_t i = 0; i < 7; ++i) handles[i] = add(h, payload(i), p[i]);
+    for (size_t i = 0; i < 7; ++i) {
+        size_t j = expected[i];
+        addr_heap_item_t peek = {0}, out = {0};
+        CHECK(addr_heap_peek_item(h, &peek) == 0);
+        expect_item(&peek, payload(j), p[j], handles[j]);
+        CHECK(addr_heap_pop(h, &out) == 0);
+        expect_item(&out, payload(j), p[j], handles[j]);
+        CHECK(addr_heap_count(h) == 6 - i);
+        release(handles[j]);
+    }
+    addr_heap_deallocate(h);
+}
+
+static void test_handles_after_reorder_and_growth(void)
+{
+    enum { N = 320 };
+    addr_heap_inst_t *h = addr_heap_allocate();
+    CHECK(h != NULL);
+    addr_heap_handle_t *handles[N];
+    for (size_t i = 0; i < N; ++i)
+        handles[i] = add(h, payload(i), (int)(i % 17) - 8);
+    CHECK(addr_heap_count(h) == N);
+
+    for (size_t i = 0; i < N; ++i) {
+        addr_heap_item_t got = {0};
+        CHECK(addr_heap_get_item(h, handles[i], &got) == 0);
+        expect_item(&got, payload(i), (int)(i % 17) - 8, handles[i]);
+    }
+
+    /* Both sift directions, including equal priorities after SET. */
+    CHECK(addr_heap_set_priority(h, INT_MAX, handles[0]) == 0);
+    CHECK(addr_heap_set_priority(h, INT_MIN, handles[N - 1]) == 0);
+    CHECK(addr_heap_set_priority(h, 100, handles[N / 2]) == 0);
+    for (size_t i = 0; i < N; ++i) {
+        int p = (i == 0) ? INT_MAX : (i == N - 1) ? INT_MIN :
+                (i == N / 2) ? 100 : (int)(i % 17) - 8;
+        addr_heap_item_t got = {0};
+        CHECK(addr_heap_get_item(h, handles[i], &got) == 0);
+        expect_item(&got, payload(i), p, handles[i]);
+    }
+    addr_heap_item_t top = {0};
+    CHECK(addr_heap_peek_item(h, &top) == 0);
+    expect_item(&top, payload(0), INT_MAX, handles[0]);
+
+    /* Arbitrary removals: root, middle, low priority, last. */
+    const size_t to_remove[] = {0, 67, 160, 319, 1, 178};
+    for (size_t k = 0; k < sizeof to_remove / sizeof to_remove[0]; ++k) {
+        size_t i = to_remove[k];
+        int p = (i == 0) ? INT_MAX : (i == 319) ? INT_MIN :
+                (i == 160) ? 100 : (int)(i % 17) - 8;
+        addr_heap_item_t out = {0};
+        CHECK(addr_heap_remove_item(h, handles[i], &out) == 0);
+        expect_item(&out, payload(i), p, handles[i]);
+        CHECK(addr_heap_get_item(h, handles[i], &out) != 0);
+        release(handles[i]);
+        handles[i] = NULL;
+    }
+
+    int last_priority = INT_MAX;
+    for (size_t k = 0; k < N - sizeof to_remove / sizeof to_remove[0]; ++k) {
+        addr_heap_item_t out = {0};
+        CHECK(addr_heap_pop(h, &out) == 0);
+        CHECK(out.prior <= last_priority);
+        last_priority = out.prior;
+        size_t i = (size_t)((uintptr_t)out.data - 1);
+        CHECK(i < N);
+        CHECK(handles[i] == out.handle);
+        handles[i] = NULL;
+        release(out.handle);
+    }
+    CHECK(addr_heap_count(h) == 0);
+    for (size_t i = 0; i < N; ++i) CHECK(handles[i] == NULL);
+    addr_heap_deallocate(h);
+}
+
+static void test_equal_priority_after_set(void)
+{
+    addr_heap_inst_t *h = addr_heap_allocate();
+    CHECK(h != NULL);
+    addr_heap_handle_t *a = add(h, payload(10), 5);
+    addr_heap_handle_t *b = add(h, payload(11), 10);
+    addr_heap_handle_t *c = add(h, payload(12), 5);
+    CHECK(addr_heap_set_priority(h, 5, b) == 0);
+    addr_heap_handle_t *expected[] = {a, b, c};
+    void *data[] = {payload(10), payload(11), payload(12)};
+    for (size_t i = 0; i < 3; ++i) {
+        addr_heap_item_t out = {0};
+        CHECK(addr_heap_pop(h, &out) == 0);
+        expect_item(&out, data[i], 5, expected[i]);
+        release(expected[i]);
+    }
+    addr_heap_deallocate(h);
+}
+
+static void test_foreign_heap_and_destroy(void)
+{
+    addr_heap_inst_t *a = addr_heap_allocate();
+    addr_heap_inst_t *b = addr_heap_allocate();
+    CHECK(a != NULL && b != NULL);
+    addr_heap_handle_t *ha = add(a, payload(1), 1);
+    addr_heap_handle_t *hb = add(b, payload(2), 2);
+    addr_heap_item_t out = {0};
+    CHECK(addr_heap_get_item(b, ha, &out) != 0);
+    CHECK(addr_heap_set_priority(b, 9, ha) != 0);
+    CHECK(addr_heap_remove_item(b, ha, &out) != 0);
+    CHECK(addr_heap_count(a) == 1);
+    CHECK(addr_heap_count(b) == 1);
+    addr_heap_deallocate(a); /* invalidates, must NOT free ha */
+    CHECK(addr_heap_free_handler(ha) == 0);
+    CHECK(addr_heap_peek_item(b, &out) == 0);
+    expect_item(&out, payload(2), 2, hb);
+    addr_heap_deallocate(b);
+    CHECK(addr_heap_free_handler(hb) == 0);
+}
+
 int main(int argc, char **argv){
     (void) argc;
     (void) argv;
@@ -395,6 +576,13 @@ int main(int argc, char **argv){
     ret = test_hash_table_extra();
     if (ret)
         return ret;
+
+    test_empty_and_single();
+    test_priority_fifo();
+    test_handles_after_reorder_and_growth();
+    test_equal_priority_after_set();
+    test_foreign_heap_and_destroy();
+    printf("PASS: addressable heap (%lu checks)\n", checks);
 
     return 0;
 }
