@@ -148,6 +148,8 @@ static int realloc_array(addr_heap_inst_t *heap)
 
 static inline void _invalidate_handle(addr_heap_handle_t* handle)
 {
+    if (!handle)
+        return;
     handle->owner = NULL;
     handle->state = HANDLE_INVALID;
 }
@@ -172,11 +174,15 @@ addr_heap_inst_t* addr_heap_allocate(void)
 
 void addr_heap_deallocate(addr_heap_inst_t *heap)
 {
+    if (!heap)
+        return;
 
-    for (size_t i = 0;  i < heap->count; ++i)
-        _invalidate_handle(heap->arr[i].handle);
+    if (heap->arr){
+        for (size_t i = 0;  i < heap->count; ++i)
+            _invalidate_handle(heap->arr[i].handle);
+        free(heap->arr);
+    }
 
-    free(heap->arr);
     free(heap);
 }
 
@@ -189,6 +195,14 @@ int addr_heap_add_item(addr_heap_inst_t *heap, void* data, int priority, addr_he
     if (!handle)
         return -3;
 
+    if (heap->count >= heap->capacity){
+        int ret = realloc_array(heap);
+        if (ret){
+            free(handle);
+            return ret;
+        }
+    }
+
     handle->owner = heap;
     handle->state = HANDLE_VALID;
 
@@ -198,17 +212,6 @@ int addr_heap_add_item(addr_heap_inst_t *heap, void* data, int priority, addr_he
     buf.data = data;
     buf.handle = handle;
 
-   
-
-    if (heap->count >= heap->capacity){
-        int ret = realloc_array(heap);
-        if (ret){
-            free(handle);
-            return ret;
-        }
-    }
-
-    
     heap->arr[heap->count] = buf;
     handle->idx = heap->count;
     heap->count++;
@@ -254,7 +257,7 @@ int addr_heap_pop(addr_heap_inst_t *heap, addr_heap_item_t* out)
 
     if (heap->count > 1){
         heap->arr[0] = heap->arr[heap->count-1];
-        heap->arr[0].handle->idx = heap->count-1;
+        heap->arr[0].handle->idx = 0;
         heap->count--;
         shift_down(heap, 0);
         return 0;
@@ -321,7 +324,7 @@ int addr_heap_set_priority(addr_heap_inst_t *heap, int priority, addr_heap_handl
 
 int addr_heap_get_item(addr_heap_inst_t *heap, addr_heap_handle_t* handle, addr_heap_item_t* out)
 {
-    if (!heap || !handle)
+    if (!heap || !handle || !out)
         return -1;
 
     if(handle->state == HANDLE_INVALID)
@@ -342,7 +345,7 @@ int addr_heap_get_item(addr_heap_inst_t *heap, addr_heap_handle_t* handle, addr_
 
 int addr_heap_remove_item(addr_heap_inst_t *heap, addr_heap_handle_t* handle,  addr_heap_item_t* out)
 {
-    if (!heap || !handle)
+    if (!heap || !handle || !out)
         return -1;
 
     if(handle->state == HANDLE_INVALID)
