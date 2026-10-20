@@ -67,11 +67,12 @@ int pri_queue_add(pri_queue_t* pq, uint32_t id, int priority, void* data)
     entry->id = id;
     entry->data = data;
     ret = addr_heap_add_item(pq->addr_heap, entry, priority, &handle);
-    if (ret == -3){
+    if (ret){
+        assert(ret != -3);
         free(entry);
         return -3;
     }
-    assert(ret == 0);
+    
         
     ret = hash_table_insert(pq->ht, id, (void*)handle);
     if (ret){

@@ -13,7 +13,7 @@ add_executable(priority_queue main.c ${SOURCE} ${HEADER})
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(priority_queue PRIVATE
-        $<$<CONFIG:Debug>:-O0>
+        $<$<CONFIG:Debug>:-O0 -DNDEBUG>
         $<$<NOT:$<CONFIG:Debug>>:-O3>
         -march=native -Wall -Wextra -Wpedantic)
     if(UNIX)
