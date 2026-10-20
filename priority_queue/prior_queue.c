@@ -28,7 +28,7 @@ pri_queue_t* pri_queue_create(void)
 
     pq->ht = hash_table_create();
     if(!pq->ht){
-        free(pq->addr_heap);
+        addr_heap_deallocate(pq->addr_heap);
         free(pq);
         return NULL;
     }
@@ -41,8 +41,8 @@ void pri_queue_destroy(pri_queue_t* pri_q)
     if(!pri_q)
         return;
 
-    pq_item_t* item_out = {0};
-    while(pri_queue_pop(pri_q, item_out) == 0);
+    pq_item_t item_out = {0};
+    while(pri_queue_pop(pri_q, &item_out) == 0);
 
     hash_table_free(pri_q->ht);
     addr_heap_deallocate(pri_q->addr_heap);
@@ -67,10 +67,11 @@ int pri_queue_add(pri_queue_t* pq, uint32_t id, int priority, void* data)
     entry->id = id;
     entry->data = data;
     ret = addr_heap_add_item(pq->addr_heap, entry, priority, &handle);
-    if (ret){
+    if (ret == -3){
         free(entry);
-        return ret;
+        return -3;
     }
+    assert(ret == 0);
         
     ret = hash_table_insert(pq->ht, id, (void*)handle);
     if (ret){
@@ -109,8 +110,10 @@ int pri_queue_remove(pri_queue_t *pq, uint32_t id)
         return -50;// can't find
 
     addr_heap_item_t out_item = {0};
-    assert(addr_heap_remove_item(pq->addr_heap, (addr_heap_handle_t*)handle, &out_item) == 0);
-    assert(hash_table_remove(pq->ht, id) == 0);
+    ret = addr_heap_remove_item(pq->addr_heap, (addr_heap_handle_t*)handle, &out_item);
+    assert(ret == 0);
+    ret = hash_table_remove(pq->ht, id);
+    assert(ret == 0);
 
     addr_heap_free_handler(handle);
     free(out_item.data);
@@ -151,9 +154,11 @@ int pri_queue_pop(pri_queue_t* pq, pq_item_t* item_out)
     if(ret == -2){
         return -2; //empty queue
     }
-
-    assert(hash_table_remove(pq->ht, ((pq_entry_t*)out.data)->id) == 0);
-    assert(addr_heap_free_handler(out.handle) == 0);
+    assert(ret == 0);
+    ret = hash_table_remove(pq->ht, ((pq_entry_t*)out.data)->id);
+    assert(ret == 0);
+    ret = addr_heap_free_handler(out.handle);
+    assert(ret == 0);
 
     _item_out.data = ((pq_entry_t*)out.data)->data;
     _item_out.id = ((pq_entry_t*)out.data)->id;
