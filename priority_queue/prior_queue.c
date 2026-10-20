@@ -1,6 +1,7 @@
 #include "prior_queue.h"
 #include "addr_heap.h"
 #include "hash_table.h"
+#include <assert.h>
 
 
 struct pri_queue {
@@ -27,8 +28,8 @@ pri_queue_t* pri_queue_create(void)
 
     pq->ht = hash_table_create();
     if(!pq->ht){
-        free(pq);
         free(pq->addr_heap);
+        free(pq);
         return NULL;
     }
 
@@ -39,7 +40,9 @@ void pri_queue_destroy(pri_queue_t* pri_q)
 {
     if(!pri_q)
         return;
-    /* TODO: free handles from hash table */
+
+    pq_item_t* item_out = {0};
+    while(pri_queue_pop(pri_q, item_out) == 0);
 
     hash_table_free(pri_q->ht);
     addr_heap_deallocate(pri_q->addr_heap);
@@ -64,9 +67,11 @@ int pri_queue_add(pri_queue_t* pq, uint32_t id, int priority, void* data)
     entry->id = id;
     entry->data = data;
     ret = addr_heap_add_item(pq->addr_heap, entry, priority, &handle);
-    if (ret)
+    if (ret){
+        free(entry);
         return ret;
-    
+    }
+        
     ret = hash_table_insert(pq->ht, id, (void*)handle);
     if (ret){
         addr_heap_item_t out = {0};
@@ -86,7 +91,7 @@ int pri_queue_set(pri_queue_t* pq, uint32_t id, int priority)
 
     void *out = NULL;
     int ret = hash_table_get(pq->ht, id, &out);
-    if (!ret || !out)
+    if (ret || !out)
         return -50;// can't find
 
     return addr_heap_set_priority(pq->addr_heap, priority, (addr_heap_handle_t*)out);
@@ -100,21 +105,16 @@ int pri_queue_remove(pri_queue_t *pq, uint32_t id)
 
     void *handle = NULL;
     int ret = hash_table_get(pq->ht, id, &handle);
-    if (!ret || !handle)
+    if (ret || !handle)
         return -50;// can't find
 
     addr_heap_item_t out_item = {0};
-    ret = addr_heap_remove_item(pq->addr_heap, (addr_heap_handle_t*)handle, &out_item);
-    if (ret){
-        return ret;
-    }
+    assert(addr_heap_remove_item(pq->addr_heap, (addr_heap_handle_t*)handle, &out_item) == 0);
+    assert(hash_table_remove(pq->ht, id) == 0);
 
-    ret = hash_table_remove(pq->ht, id);
-    if(ret){
-        // TODO: return item to addr heap and refresh handle in hash table
-        return ret;
-    }
     addr_heap_free_handler(handle);
+    free(out_item.data);
+
     
     return 0;
 }
@@ -148,26 +148,25 @@ int pri_queue_pop(pri_queue_t* pq, pq_item_t* item_out)
     pq_item_t _item_out = {0};
     addr_heap_item_t out = {0};
     int ret = addr_heap_pop(pq->addr_heap, &out);
-    if(ret){
-        return -50;
+    if(ret == -2){
+        return -2; //empty queue
     }
 
-    ret = hash_table_remove(pq->ht, ((pq_entry_t*)out.data)->id);
-    if (ret && ret != -50){
-        return ret;
-    }
-    addr_heap_free_handler(out.handle);
+    assert(hash_table_remove(pq->ht, ((pq_entry_t*)out.data)->id) == 0);
+    assert(addr_heap_free_handler(out.handle) == 0);
 
     _item_out.data = ((pq_entry_t*)out.data)->data;
     _item_out.id = ((pq_entry_t*)out.data)->id;
     _item_out.priority = out.prior;
 
     *item_out = _item_out;
+    free(out.data);
 
     return 0;
 }
 
 size_t pri_queue_count(pri_queue_t* pq)
 {
+    if (!pq) return 0;
     return hash_table_count(pq->ht);
 }
