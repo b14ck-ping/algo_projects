@@ -68,7 +68,7 @@ int pri_queue_add(pri_queue_t* pq, uint32_t id, int priority, void* data)
     entry->data = data;
     ret = addr_heap_add_item(pq->addr_heap, entry, priority, &handle);
     if (ret){
-        assert(ret != -3);
+        assert(ret == -3);
         free(entry);
         return -3;
     }
@@ -76,8 +76,8 @@ int pri_queue_add(pri_queue_t* pq, uint32_t id, int priority, void* data)
         
     ret = hash_table_insert(pq->ht, id, (void*)handle);
     if (ret){
-        addr_heap_item_t out = {0};
-        addr_heap_remove_item(pq->addr_heap, handle, &out);
+        addr_heap_item_t bout = {0};
+        addr_heap_remove_item(pq->addr_heap, handle, &bout);
         addr_heap_free_handler( handle);
         free(entry);
         return ret;
