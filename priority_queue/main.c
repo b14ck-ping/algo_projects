@@ -6,12 +6,6 @@
 #include <string.h>
 #include <limits.h>
 
-#include "heap.h"
-#include "hash_table.h"
-#include "addr_heap.h"
-
-
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
