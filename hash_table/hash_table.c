@@ -22,13 +22,62 @@ typedef struct hash_table{
     hash_entry_t* buckets;
 }hash_table_t ;
 
+typedef struct {
+    size_t calls;
+    uint64_t total_probes;
+    size_t max_probes;
+} ht_bench_stats_t;
+
+static void ht_record_probes(ht_bench_stats_t *stats,
+                             size_t probes)
+{
+    stats->calls++;
+    stats->total_probes += probes;
+
+    if (probes > stats->max_probes)
+        stats->max_probes = probes;
+}
+
 static int rehash_table(hash_table_t* ht_old, hash_table_t* ht_new);
 
 static int increase_table(hash_table_t* ht);
 
+static inline uint32_t hash_identity(uint32_t key)
+{
+    return key;
+}
+
+static inline uint32_t hash_multiplicative(uint32_t key)
+{
+    return key * UINT32_C(2654435761);
+}
+
+static inline uint32_t hash_murmur3(uint32_t key)
+{
+    key ^= key >> 16;
+    key *= UINT32_C(0x85ebca6b);
+    key ^= key >> 13;
+    key *= UINT32_C(0xc2b2ae35);
+    key ^= key >> 16;
+
+    return key;
+}
+
 static inline size_t get_hash (hash_table_t* ht, uint32_t key)
 {
-    return (size_t)key % ht->capacity;
+        uint32_t hash;
+
+#if HT_HASH_MODE == 0
+    hash = hash_identity(key);
+#elif HT_HASH_MODE == 1
+    hash = hash_multiplicative(key);
+#elif HT_HASH_MODE == 2
+    hash = hash_murmur3(key);
+#else
+#error Unsupported hash mode
+#endif
+
+    return (size_t)hash % ht->capacity;
 }
 
 static inline size_t get_probe(size_t key)
@@ -155,6 +204,23 @@ hash_table_t* hash_table_create(void)
     return ht;
 }
 
+hash_table_t* hash_table_create_n(size_t N)
+{
+    hash_table_t *ht = (hash_table_t*)calloc(1, sizeof(hash_table_t));
+    if (!ht)
+        return NULL;
+
+    ht->buckets = (hash_entry_t*)calloc(N, sizeof(hash_entry_t));
+    if (!ht->buckets){
+        free(ht);
+        return NULL;
+    }
+       
+    ht->capacity = N;
+    
+    return ht;
+}
+
 void hash_table_free(hash_table_t* ht)
 {
     if (!ht)
@@ -175,7 +241,7 @@ int hash_table_insert(hash_table_t* ht, uint32_t key, void* value)
     void* out = 0;
     if (hash_table_get(ht, key, &out) && 
         ((double)(ht->count + 1)/(double)ht->capacity) > MAX_LOAD_FACTOR){
-        printf("Increase table \n");
+        // printf("Increase table \n");
         int ret = increase_table(ht);
         if (ret){
             printf("Increasing of table returns non-zero status %d\n", ret);
@@ -263,4 +329,38 @@ size_t hash_table_count(hash_table_t* ht)
         return ht->count;
 
     return 0;
+}
+
+int hash_table_debug_get_probes(hash_table_t *ht,
+                                uint32_t key,
+                                size_t *probes)
+{
+    if (!ht || !probes)
+        return -1;
+
+    *probes = 0;
+
+    size_t idx = get_hash(ht, key);
+
+    for (size_t i = 0; i < ht->capacity; ++i) {
+        ++*probes;
+
+        hash_entry_t *entry = &ht->buckets[idx];
+
+        if (entry->state == SLOT_EMPTY)
+            return -50;
+
+        if (entry->state == SLOT_OCCUPIED &&
+            entry->key == key)
+            return 0;
+
+        idx = (idx + 1) % ht->capacity;
+    }
+
+    return -50;
+}
+
+size_t hash_table_debug_capacity(hash_table_t *ht)
+{
+    return ht ? ht->capacity : 0;
 }
