@@ -1,5 +1,4 @@
 
-
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdint.h>
@@ -8,10 +7,15 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <time.h>
+#include <string.h>
 
 #include "hash_table.h"
 
-
+typedef enum {
+    KEYS_RANDOM,
+    KEYS_SEQUENTIAL,
+    KEYS_COLLIDING
+} key_pattern_t;
 
 typedef struct {
     size_t calls;
@@ -19,17 +23,24 @@ typedef struct {
     size_t max_probes;
 } ht_bench_stats_t;
 
-static uint32_t rng_state = 0x12345678;
+static uint32_t rng_state = UINT32_C(0x12345678);
+static volatile uintptr_t bench_sink;
+
+/* ---------- Random generator ---------- */
 
 static uint32_t random_u32(void)
 {
     uint32_t x = rng_state;
+
     x ^= x << 13;
     x ^= x >> 17;
     x ^= x << 5;
+
     rng_state = x;
     return x;
 }
+
+/* ---------- Timer ---------- */
 
 static uint64_t now_ns(void)
 {
@@ -44,41 +55,93 @@ static uint64_t now_ns(void)
          + (uint64_t)ts.tv_nsec;
 }
 
-static void ht_record_probes(ht_bench_stats_t *s, size_t probes)
-{
-    s->calls++;
-    s->total_probes += probes;
+/* ---------- Probe statistics ---------- */
 
-    if (probes > s->max_probes)
-        s->max_probes = probes;
+static void record_probes(ht_bench_stats_t *stats,
+                          size_t probes)
+{
+    stats->calls++;
+    stats->total_probes += probes;
+
+    if (probes > stats->max_probes)
+        stats->max_probes = probes;
 }
 
-static void ht_print_stats(const char *name,
-                           const ht_bench_stats_t *s)
+static void print_probe_stats(const char *name,
+                              const ht_bench_stats_t *stats)
 {
-    double avg = s->calls
-        ? (double)s->total_probes / (double)s->calls
+    double average = stats->calls
+        ? (double)stats->total_probes / stats->calls
         : 0.0;
 
-    printf("  %-12s avg=%8.3f  max=%6zu\n",
-           name, avg, s->max_probes);
+    printf("  %-13s avg=%9.3f  max=%7zu\n",
+           name, average, stats->max_probes);
 }
 
-static volatile uintptr_t bench_sink;
+/* ---------- Test data ---------- */
+
+static const char *pattern_name(key_pattern_t pattern)
+{
+    switch (pattern) {
+    case KEYS_RANDOM:     return "RANDOM";
+    case KEYS_SEQUENTIAL: return "SEQUENTIAL";
+    case KEYS_COLLIDING:  return "COLLIDING";
+    }
+
+    return "UNKNOWN";
+}
+
+static void generate_keys(uint32_t *keys,
+                          size_t n,
+                          size_t capacity,
+                          key_pattern_t pattern,
+                          size_t start)
+{
+    for (size_t i = 0; i < n; ++i) {
+        size_t value = start + i;
+
+        switch (pattern) {
+        case KEYS_RANDOM:
+            keys[i] = random_u32();
+            break;
+
+        case KEYS_SEQUENTIAL:
+            keys[i] = (uint32_t)value;
+            break;
+
+        case KEYS_COLLIDING:
+            keys[i] = (uint32_t)(value * capacity);
+            break;
+        }
+    }
+}
+
+/* ---------- Timing benchmark ---------- */
+
+static int compare_double(const void *a, const void *b)
+{
+    double x = *(const double *)a;
+    double y = *(const double *)b;
+
+    return (x > y) - (x < y);
+}
 
 static void benchmark_ht_get(hash_table_t *ht,
                              const uint32_t *keys,
-                             size_t n)
+                             size_t n,
+                             size_t target_operations)
 {
-    const size_t target_operations = 10000000;
-    const size_t runs = 7;
+    enum { RUNS = 7 };
 
-    size_t repeats = (target_operations + n - 1) / n;
+    size_t repeats =
+        target_operations / n +
+        (target_operations % n != 0);
+
     size_t operations = repeats * n;
 
-    double results[7];
+    double results[RUNS];
 
-    for (size_t run = 0; run < runs + 1; ++run) {
+    for (size_t run = 0; run <= RUNS; ++run) {
         uintptr_t checksum = 0;
 
         uint64_t start = now_ns();
@@ -86,7 +149,14 @@ static void benchmark_ht_get(hash_table_t *ht,
         for (size_t r = 0; r < repeats; ++r) {
             for (size_t i = 0; i < n; ++i) {
                 void *out = NULL;
-                hash_table_get(ht, keys[i], &out);
+
+                int ret = hash_table_get(ht, keys[i], &out);
+
+                if (ret != 0 || out == NULL) {
+                    fprintf(stderr, "Benchmark lookup failed\n");
+                    exit(EXIT_FAILURE);
+                }
+
                 checksum += (uintptr_t)out;
             }
         }
@@ -95,7 +165,7 @@ static void benchmark_ht_get(hash_table_t *ht,
 
         bench_sink = checksum;
 
-        // Первый запуск — прогревочный.
+        /* Run 0 is warm-up. */
         if (run == 0)
             continue;
 
@@ -103,150 +173,155 @@ static void benchmark_ht_get(hash_table_t *ht,
             (double)elapsed / (double)operations;
     }
 
-    // Сортировка семи результатов по возрастанию.
-    for (size_t i = 1; i < runs; ++i) {
-        double value = results[i];
-        size_t j = i;
+    qsort(results, RUNS, sizeof(results[0]), compare_double);
 
-        while (j > 0 && results[j - 1] > value) {
-            results[j] = results[j - 1];
-            --j;
-        }
+    double median = results[RUNS / 2];
 
-        results[j] = value;
-    }
-
-    double median = results[runs / 2];
-
-    printf("  Median:     %.2f ns/op\n", median);
-    printf("  Throughput: %.2f Mops/s\n", 1000.0 / median);
+    printf("  Median:      %.2f ns/op\n", median);
+    printf("  Throughput:  %.2f Mops/s\n",
+           1000.0 / median);
 }
 
-static void test_ht_probes(size_t n)
+/* ---------- Experiment ---------- */
+
+static void test_ht_probes(size_t requested_n,
+                           key_pattern_t pattern)
 {
-    hash_table_t *ht = hash_table_create_n(n*2);
+     size_t capacity = requested_n * 2;
+
+
+    if (requested_n == 0 ||
+        requested_n > SIZE_MAX / 2 ||
+        requested_n > SIZE_MAX / sizeof(uint32_t)) {
+        fprintf(stderr, "Invalid N\n");
+        exit(EXIT_FAILURE);
+    }
+
+    const size_t n =
+        pattern == KEYS_COLLIDING
+            ? 4096
+            : requested_n;
+
+    if (pattern == KEYS_COLLIDING &&
+        (2 * n - 1) > UINT32_MAX / capacity) {
+        fprintf(stderr, "Colliding keys overflow\n");
+        exit(EXIT_FAILURE);
+    }
+
+    rng_state = UINT32_C(0x12345678);
+
+    hash_table_t *ht = hash_table_create_n(capacity);
     if (!ht) {
         fprintf(stderr, "Cannot create hash table\n");
         exit(EXIT_FAILURE);
     }
 
-    uint32_t *keys = calloc(n, sizeof(uint32_t));
-    if (!keys) {
+    uint32_t *keys = malloc(n * sizeof(*keys));
+    uint32_t *missing_keys = malloc(n * sizeof(*missing_keys));
+
+    if (!keys || !missing_keys) {
         fprintf(stderr, "Memory allocation failed\n");
         exit(EXIT_FAILURE);
-    }
-    for (size_t i = 0; i < n; i++){
-        keys[i] = random_u32();
     }
 
-    uint32_t *missing_keys = malloc(n * sizeof(*missing_keys));
-    if (!missing_keys) {
-        fprintf(stderr, "Memory allocation failed\n");
-        exit(EXIT_FAILURE);
-    }
-    for (size_t i = 0; i < n; i++){
-        missing_keys[i] = random_u32();
-    }
+    generate_keys(keys, n, capacity, pattern, 0);
+    generate_keys(missing_keys, n, capacity, pattern, n);
 
     static int value = 42;
 
-
-    /* Fill the table. Not measured. */
+    /* Fill the table without timing. */
     for (size_t i = 0; i < n; ++i) {
-        uint32_t key = keys[i];//ht_bench_key((uint32_t)i);
+        int ret = hash_table_insert(ht, keys[i], &value);
 
-        if (hash_table_insert(ht, key, &value) != 0) {
-            fprintf(stderr, "Insert failed at %zu\n", i);
+        if (ret != 0) {
+            fprintf(stderr,
+                    "Insert failed at %zu, status=%d\n",
+                    i, ret);
             exit(EXIT_FAILURE);
         }
     }
 
-    size_t capacity = hash_table_debug_capacity(ht);
+    capacity = hash_table_debug_capacity(ht);
 
-    printf("\nN=%zu capacity=%zu load=%.3f\n",
-        n,
-        capacity,
-        (double)n / (double)capacity);
+    printf("\nPattern: %s\n", pattern_name(pattern));
+    printf("N=%zu capacity=%zu load=%.3f\n",
+           n, capacity, (double)n / capacity);
 
-    benchmark_ht_get(ht, keys, n);
+    /*
+     * Worst-case collision scenario:
+     * avoid tens of billions of bucket probes.
+     */
+    size_t target_operations =
+        pattern == KEYS_COLLIDING ? 10000 : 10000000;
 
+    printf("Timing %zu lookups per run (minimum)\n",
+           target_operations);
+    fflush(stdout);
+
+    benchmark_ht_get(ht, keys, n, target_operations);
 
     ht_bench_stats_t successful = {0};
     ht_bench_stats_t unsuccessful = {0};
 
-    /* Search every existing key. */
     for (size_t i = 0; i < n; ++i) {
-        uint32_t key = keys[i];//ht_bench_key((uint32_t)i);
         size_t probes = 0;
 
         int ret = hash_table_debug_get_probes(
-            ht, key, &probes);
+            ht, keys[i], &probes);
 
         if (ret != 0) {
-            fprintf(stderr, "Lookup failed at %zu\n", i);
+            fprintf(stderr,
+                    "Successful lookup failed at %zu\n", i);
             exit(EXIT_FAILURE);
         }
 
-        ht_record_probes(&successful, probes);
+        record_probes(&successful, probes);
     }
 
-    /* Search an equal number of absent keys. */
     for (size_t i = 0; i < n; ++i) {
-        uint32_t key = missing_keys[i];//ht_bench_key((uint32_t)i) | 1u;
         size_t probes = 0;
 
         int ret = hash_table_debug_get_probes(
-            ht, key, &probes);
+            ht, missing_keys[i], &probes);
 
         if (ret != -50) {
-            fprintf(stderr, "Unexpected lookup result\n");
+            fprintf(stderr,
+                    "Unexpected lookup result at %zu: %d\n",
+                    i, ret);
             exit(EXIT_FAILURE);
         }
 
-        ht_record_probes(&unsuccessful, probes);
+        record_probes(&unsuccessful, probes);
     }
 
-    // printf("\nN = %zu\n", n);
-    ht_print_stats("Successful", &successful);
-    ht_print_stats("Unsuccessful", &unsuccessful);
+    print_probe_stats("Successful", &successful);
+    print_probe_stats("Unsuccessful", &unsuccessful);
 
     hash_table_free(ht);
     free(keys);
     free(missing_keys);
 }
 
-static void test_ht_scaling(void)
+int main(void)
 {
-    const size_t sizes[] = {
-        1000,
-        10000,
-        100000,
-        1000000,
-        5000000
+    /*
+     * Fixed size and load factor for comparing
+     * hash functions on identical conditions.
+     */
+    const size_t n = 16384;
+
+    const key_pattern_t patterns[] = {
+        KEYS_RANDOM,
+        KEYS_SEQUENTIAL,
+        KEYS_COLLIDING
     };
 
-    /* const size_t sizes[] = {
-        16384,
-        49152,
-        81920,
-        98304,
-        114688
-    }; */
-
-    /* for (size_t i = 0;
-         i < sizeof(sizes) / sizeof(sizes[0]);
+    for (size_t i = 0;
+         i < sizeof(patterns) / sizeof(patterns[0]);
          ++i) {
-        test_ht_probes(sizes[i]);
-    } */
-    test_ht_probes(sizes[2]);
-}
 
+        test_ht_probes(n, patterns[i]);
+    }
 
-int main(void){
- 
-
-    test_ht_scaling();
-    
-
-    return 0;
+    return EXIT_SUCCESS;
 }

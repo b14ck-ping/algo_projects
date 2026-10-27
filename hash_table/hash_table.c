@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
+// #include <stdio.h>
 typedef enum {
     SLOT_EMPTY = 0,
     SLOT_OCCUPIED,
@@ -80,9 +80,34 @@ static inline size_t get_hash (hash_table_t* ht, uint32_t key)
     return (size_t)hash % ht->capacity;
 }
 
-static inline size_t get_probe(size_t key)
+
+
+static inline uint32_t probe_mix(uint32_t x)
 {
-    return ++key;
+    x ^= x >> 16;
+    x *= UINT32_C(0x7feb352d);
+    x ^= x >> 15;
+    x *= UINT32_C(0x846ca68b);
+    x ^= x >> 16;
+    return x;
+}
+
+static inline size_t probe_step(uint32_t key, size_t capacity)
+{
+#if HT_PROBE_MODE == 0
+    (void)key;
+    (void)capacity;
+    return 1;
+#elif HT_PROBE_MODE == 1
+    return ((size_t)probe_mix(key) % capacity) | 1u;
+#else
+#error Unsupported probe mode
+#endif
+}
+
+static inline size_t get_probe(hash_table_t* ht, uint32_t key)
+{
+    return key + probe_step(key, ht->capacity);
 }
 
 static inline void _insert(hash_table_t* ht, uint32_t key, void* value, size_t i)
@@ -99,27 +124,23 @@ static inline void _remove(hash_table_t* ht, size_t i)
     ht->buckets[i].value = 0;
     ht->buckets[i].key = 0;
     size_t next = (i + 1) % ht->capacity;
+#if HT_PROBE_MODE == 0
     ht->buckets[i].state = ht->buckets[next].state == SLOT_EMPTY ? SLOT_EMPTY : SLOT_DELETED;
+#endif
     ht->count--;
     ht->load_factor = (double)ht->count/(double)ht->capacity;
 }
 
 static size_t find_key_or_deleted_idx(hash_table_t* ht, size_t start_idx, uint32_t key){
     
-    for (size_t i = start_idx; i < ht->capacity; i = get_probe(i)){
-        if (ht->buckets[i].state == SLOT_EMPTY ||
-            ht->buckets[i].state == SLOT_DELETED ||
-            ht->buckets[i].key == key){
-            return i;
+    size_t idx = start_idx, step = probe_step(key, ht->capacity);
+    for (size_t i = 0; i < ht->capacity; i++){
+        if (ht->buckets[idx].state == SLOT_EMPTY ||
+            ht->buckets[idx].state == SLOT_DELETED ||
+            ht->buckets[idx].key == key){
+            return idx;
         }
-    }
-
-    for (size_t i = 0; i < start_idx; i = get_probe(i)){
-        if (ht->buckets[i].state == SLOT_EMPTY ||
-            ht->buckets[i].state == SLOT_DELETED ||
-            ht->buckets[i].key == key){
-            return i;
-        }
+        idx = (idx + step) % ht->capacity;
     }
 
     return start_idx;
@@ -127,20 +148,14 @@ static size_t find_key_or_deleted_idx(hash_table_t* ht, size_t start_idx, uint32
 
 static size_t find_key_idx(hash_table_t* ht, size_t start_idx, uint32_t key){
     
-    for (size_t i = start_idx; i < ht->capacity; i = get_probe(i)){
-        if (ht->buckets[i].state == SLOT_EMPTY ||
-            (ht->buckets[i].state == SLOT_OCCUPIED &&
-            ht->buckets[i].key == key)){
-            return i;
+    size_t idx = start_idx, step = probe_step(key, ht->capacity);
+    for (size_t i = 0; i < ht->capacity; i++){
+        if (ht->buckets[idx].state == SLOT_EMPTY ||
+            (ht->buckets[idx].state == SLOT_OCCUPIED &&
+            ht->buckets[idx].key == key)){
+            return idx;
         }
-    }
-
-    for (size_t i = 0; i < start_idx; i = get_probe(i)){
-        if (ht->buckets[i].state == SLOT_EMPTY ||
-            (ht->buckets[i].state == SLOT_OCCUPIED &&
-            ht->buckets[i].key == key)){
-            return i;
-        }
+        idx = (idx + step) % ht->capacity;
     }
 
     return start_idx;
@@ -241,10 +256,8 @@ int hash_table_insert(hash_table_t* ht, uint32_t key, void* value)
     void* out = 0;
     if (hash_table_get(ht, key, &out) && 
         ((double)(ht->count + 1)/(double)ht->capacity) > MAX_LOAD_FACTOR){
-        // printf("Increase table \n");
         int ret = increase_table(ht);
         if (ret){
-            printf("Increasing of table returns non-zero status %d\n", ret);
             return ret;
         }
             
@@ -340,8 +353,7 @@ int hash_table_debug_get_probes(hash_table_t *ht,
 
     *probes = 0;
 
-    size_t idx = get_hash(ht, key);
-
+    size_t idx = get_hash(ht, key), step = probe_step(key, ht->capacity);
     for (size_t i = 0; i < ht->capacity; ++i) {
         ++*probes;
 
@@ -354,7 +366,7 @@ int hash_table_debug_get_probes(hash_table_t *ht,
             entry->key == key)
             return 0;
 
-        idx = (idx + 1) % ht->capacity;
+        idx = (idx + step) % ht->capacity;
     }
 
     return -50;

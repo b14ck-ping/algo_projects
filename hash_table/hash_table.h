@@ -1,15 +1,18 @@
 #ifndef HASH_TABLE_H
 #define HASH_TABLE_H
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 
-#define START_CAPACITY 163840
-#define MAX_LOAD_FACTOR 0.75
+#define START_CAPACITY 32768
+#define MAX_LOAD_FACTOR 0.5
 
 #ifndef HT_HASH_MODE
-#define HT_HASH_MODE 0
+#define HT_HASH_MODE 2
+#endif
+
+#ifndef HT_PROBE_MODE
+#define HT_PROBE_MODE 0
 #endif
 
 typedef struct hash_table hash_table_t;
