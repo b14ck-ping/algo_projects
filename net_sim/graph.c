@@ -29,11 +29,9 @@ static inline int _check_vertex_neighbour_slots(graph_inst_t *graph, uint32_t ve
         graph->vertices[vertex_id].neighbours_cap = START_EDGES_CBT;
         return 0;
     }
-        
-    if (graph->vertices[vertex_id].neighbours_cap == UINT32_MAX)
-        return GRAPG_ERROR_FULL;
 
     if (graph->vertices[vertex_id].neighbours_cnt == graph->vertices[vertex_id].neighbours_cap){
+        if (graph->vertices[vertex_id].neighbours_cap == UINT32_MAX) return GRAPH_ERROR_FULL;
         uint32_t size = graph->vertices[vertex_id].neighbours_cap < UINT32_MAX / 2 ? graph->vertices[vertex_id].neighbours_cap*2 : UINT32_MAX;
         uint32_t *buff = realloc(graph->vertices[vertex_id].neighbours, size*sizeof(uint32_t));
         if (!buff)
@@ -54,6 +52,10 @@ static inline bool _find_neighbour(const vertex_t *vertex, uint32_t neighbour_id
 }
 
 static inline bool _check_vertices_has_edge(graph_inst_t *graph, uint32_t vertex_a_id, uint32_t vertex_b_id){
+    if (!graph->vertices[vertex_a_id].neighbours_cnt ||
+        !graph->vertices[vertex_b_id].neighbours_cnt)
+            return false;
+
     if (_find_neighbour(&graph->vertices[vertex_a_id], vertex_b_id))
         return true;
 
@@ -96,20 +98,15 @@ graph_status_t graph_add_vertex(graph_inst_t *graph, uint32_t *vertex_id)
     if (!graph || !vertex_id)
         return GRAPH_ERROR_BAD_ARG;
 
-    if (graph->vert_capacity == UINT32_MAX)
-        return GRAPG_ERROR_FULL;
-
     if (graph->vert_capacity == graph->vert_cnt){
+        if(graph->vert_capacity == UINT32_MAX)return GRAPH_ERROR_FULL; 
         uint32_t size = graph->vert_capacity < UINT32_MAX / 2 ? graph->vert_capacity * 2 : UINT32_MAX;
         vertex_t *buff = realloc(graph->vertices, size*sizeof(vertex_t));
         if (!buff)
-            return GRAPG_ERROR_MEMALLOC_ERROR;
+            return GRAPH_ERROR_MEMALLOC_ERROR;
         graph->vert_capacity = size;
         graph->vertices = buff;
     }
-
-    if (graph->vert_capacity == graph->vert_cnt)
-        return GRAPG_ERROR_CANT_CREATE_VERTEX;
 
     graph->vertices[graph->vert_cnt].neighbours = NULL;
     graph->vertices[graph->vert_cnt].neighbours_cap = 0;
@@ -126,20 +123,23 @@ graph_status_t graph_add_edge(graph_inst_t *graph, uint32_t vertex_a_id, uint32_
         return GRAPH_ERROR_BAD_ARG;
 
     if (vertex_a_id == vertex_b_id)
-        return GRAPG_ERROR_LOOP;
+        return GRAPH_ERROR_LOOP;
 
     if (vertex_a_id >= graph->vert_cnt 
         || vertex_b_id >= graph->vert_cnt)
-        return GRAPG_ERROR_VERTEX_IS_NOT_EXIST;
+        return GRAPH_ERROR_VERTEX_IS_NOT_EXIST;
+
+    if(_check_vertices_has_edge(graph, vertex_a_id, vertex_b_id))
+        return GRAPH_STATUS_OK;
 
     if(_check_vertex_neighbour_slots(graph, vertex_a_id)
         || _check_vertex_neighbour_slots(graph, vertex_b_id))
-        return GRAPG_ERROR_MEMALLOC_ERROR;
+        return GRAPH_ERROR_MEMALLOC_ERROR;
     
-    if(!_check_vertices_has_edge(graph, vertex_a_id, vertex_b_id)){
-        graph->vertices[vertex_a_id].neighbours[graph->vertices[vertex_a_id].neighbours_cnt++] = vertex_b_id;
-        graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++] = vertex_a_id;
-    }
+
+    graph->vertices[vertex_a_id].neighbours[graph->vertices[vertex_a_id].neighbours_cnt++] = vertex_b_id;
+    graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++] = vertex_a_id;
+
 
     return GRAPH_STATUS_OK;
 } 
@@ -151,7 +151,7 @@ graph_status_t graph_get_neighbous(graph_inst_t *graph, uint32_t vertex_id,
         return GRAPH_ERROR_BAD_ARG;
 
     if (vertex_id >= graph->vert_cnt)
-        return GRAPG_ERROR_VERTEX_IS_NOT_EXIST;
+        return GRAPH_ERROR_VERTEX_IS_NOT_EXIST;
 
     if (!graph->vertices[vertex_id].neighbours || graph->vertices[vertex_id].neighbours_cnt == 0){
         *neighbours_buf = NULL;
