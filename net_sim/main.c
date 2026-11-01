@@ -2,8 +2,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include "graph.h"
+#include "graph_algorithms.h"
 
 #define CHECK(expr)                                                   \
     do {                                                              \
@@ -40,7 +42,7 @@ static uint32_t count_neighbour(graph_inst_t *graph,
     uint32_t count = UINT32_MAX;
     uint32_t occurrences = 0;
 
-    CHECK(graph_get_neighbous(graph, vertex,
+    CHECK(graph_get_neighbours(graph, vertex,
                               &list, &count) == GRAPH_STATUS_OK);
 
     CHECK(count == 0 || list != NULL);
@@ -60,7 +62,7 @@ static void check_degree(graph_inst_t *graph,
     const uint32_t *list = NULL;
     uint32_t count = UINT32_MAX;
 
-    CHECK(graph_get_neighbous(graph, vertex,
+    CHECK(graph_get_neighbours(graph, vertex,
                               &list, &count) == GRAPH_STATUS_OK);
     CHECK(count == expected);
     CHECK(count == 0 || list != NULL);
@@ -183,7 +185,7 @@ static void test_isolated_vertices(void)
     const uint32_t *list = (const uint32_t *)1;
     uint32_t count = UINT32_MAX;
 
-    CHECK(graph_get_neighbous(graph, c,
+    CHECK(graph_get_neighbours(graph, c,
                               &list, &count) == GRAPH_STATUS_OK);
     CHECK(list == NULL);
     CHECK(count == 0);
@@ -214,16 +216,16 @@ static void test_invalid_arguments(void)
     const uint32_t *list = NULL;
     uint32_t count = 0;
 
-    CHECK(graph_get_neighbous(NULL, 0, &list, &count)
+    CHECK(graph_get_neighbours(NULL, 0, &list, &count)
           == GRAPH_ERROR_BAD_ARG);
 
-    CHECK(graph_get_neighbous(graph, 0, NULL, &count)
+    CHECK(graph_get_neighbours(graph, 0, NULL, &count)
           == GRAPH_ERROR_BAD_ARG);
 
-    CHECK(graph_get_neighbous(graph, 0, &list, NULL)
+    CHECK(graph_get_neighbours(graph, 0, &list, NULL)
           == GRAPH_ERROR_BAD_ARG);
 
-    CHECK(graph_get_neighbous(graph, 1, &list, &count)
+    CHECK(graph_get_neighbours(graph, 1, &list, &count)
           == GRAPH_ERROR_VERTEX_IS_NOT_EXIST);
 
     graph_free(graph);
@@ -306,6 +308,107 @@ static void test_large_graph(void)
     graph_free(graph);
 }
 
+static graph_inst_t *create_graph(uint32_t count)
+{
+    graph_inst_t *g = graph_create();
+    assert(g);
+
+    for (uint32_t i = 0; i < count; ++i) {
+        uint32_t id = UINT32_MAX;
+
+        assert(graph_add_vertex(g, &id) == GRAPH_STATUS_OK);
+        assert(id == i);
+    }
+
+    return g;
+}
+
+static void add_edge(graph_inst_t *g, uint32_t a, uint32_t b)
+{
+    assert(graph_add_edge(g, a, b) == GRAPH_STATUS_OK);
+}
+
+/*
+ * Test 1: Simple chain
+ *
+ * 0 --- 1 --- 2 --- 3
+ *
+ * Expected path: 0 -> 1 -> 2 -> 3
+ */
+static void test_bfs_simple(void)
+{
+    graph_inst_t *g = create_graph(4);
+
+    add_edge(g, 0, 1);
+    add_edge(g, 1, 2);
+    add_edge(g, 2, 3);
+
+    uint32_t *path = NULL;
+    size_t length = 0;
+
+    assert(ga_find_shortest_way(
+        g, 0, 3, &path, &length) == GA_STATUS_OK);
+
+    assert(path != NULL);
+    assert(length == 4);
+
+    const uint32_t expected[] = {0, 1, 2, 3};
+
+    for (size_t i = 0; i < length; ++i)
+        assert(path[i] == expected[i]);
+
+    free(path);
+    graph_free(g);
+
+    printf("[PASS] test_bfs_simple\n");
+}
+
+/*
+ * Test 2: Shortest path, not first available path
+ *
+ * 0 --- 1 --- 2 --- 3
+ * |                 |
+ * +------- 4 ------+
+ *
+ * From 0 to 3:
+ * 0 -> 1 -> 2 -> 3  (3 edges)
+ * 0 -> 4 -> 3       (2 edges)
+ *
+ * Expected: 0 -> 4 -> 3
+ */
+static void test_bfs_shortest(void)
+{
+    graph_inst_t *g = create_graph(5);
+
+    add_edge(g, 0, 1);
+    add_edge(g, 1, 2);
+    add_edge(g, 2, 3);
+
+    /* Shorter alternative added last. */
+    add_edge(g, 0, 4);
+    add_edge(g, 4, 3);
+
+    uint32_t *path = NULL;
+    size_t length = 0;
+
+    assert(ga_find_shortest_way(
+        g, 0, 3, &path, &length) == GA_STATUS_OK);
+
+    assert(path != NULL);
+    assert(length == 3);
+
+    const uint32_t expected[] = {0, 4, 3};
+
+    for (size_t i = 0; i < length; ++i)
+        assert(path[i] == expected[i]);
+
+    free(path);
+    graph_free(g);
+
+    printf("[PASS] test_bfs_shortest\n");
+}
+
+
 int main(void)
 {
     printf("=== Graph Core Tests ===\n\n");
@@ -321,6 +424,11 @@ int main(void)
     RUN_TEST(test_large_graph);
 
     printf("\nAll graph tests passed!\n");
+
+    test_bfs_simple();
+    test_bfs_shortest();
+
+    puts("All BFS tests passed!");
 
     return EXIT_SUCCESS;
 }

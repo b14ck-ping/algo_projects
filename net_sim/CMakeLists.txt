@@ -2,6 +2,7 @@ add_executable(net_sim main.c)
 
 target_sources(net_sim PRIVATE
     graph.c
+    graph_algorithms.c
 )
 
 target_include_directories(net_sim

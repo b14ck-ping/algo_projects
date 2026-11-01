@@ -144,7 +144,7 @@ graph_status_t graph_add_edge(graph_inst_t *graph, uint32_t vertex_a_id, uint32_
     return GRAPH_STATUS_OK;
 } 
 
-graph_status_t graph_get_neighbous(graph_inst_t *graph, uint32_t vertex_id, 
+graph_status_t graph_get_neighbours(graph_inst_t *graph, uint32_t vertex_id, 
                                     const uint32_t **neighbours_buf, uint32_t* neghbours_cnt)
 {
     if (!graph || !neighbours_buf || !neghbours_cnt)
@@ -162,5 +162,14 @@ graph_status_t graph_get_neighbous(graph_inst_t *graph, uint32_t vertex_id,
     *neighbours_buf = graph->vertices[vertex_id].neighbours;
     *neghbours_cnt = graph->vertices[vertex_id].neighbours_cnt;
 
+    return GRAPH_STATUS_OK;
+}
+
+graph_status_t graph_get_vertices_cnt(graph_inst_t *graph, uint32_t* vertices_cnt)
+{
+    if (!graph)
+        return GRAPH_ERROR_BAD_ARG;
+
+    *vertices_cnt = graph->vert_cnt;
     return GRAPH_STATUS_OK;
 }

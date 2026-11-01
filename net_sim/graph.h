@@ -25,7 +25,9 @@ graph_status_t graph_add_vertex(graph_inst_t *graph, uint32_t* vertex_id);
 
 graph_status_t graph_add_edge(graph_inst_t *graph, uint32_t vertex_a_id, uint32_t vertex_b_id); 
 
-graph_status_t graph_get_neighbous(graph_inst_t *graph, uint32_t vertex_id, 
+graph_status_t graph_get_vertices_cnt(graph_inst_t *graph, uint32_t* vertices_cnt);
+
+graph_status_t graph_get_neighbours(graph_inst_t *graph, uint32_t vertex_id, 
                                     const uint32_t **neighbours_buf, uint32_t* neghbours_cnt);
 
 #endif //GRAPH_H
