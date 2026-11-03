@@ -44,7 +44,7 @@ static bool queue_is_empty(struct queue *queue)
 static void queue_enqueue(struct queue *queue, uint32_t item)
 {
     queue->data[queue->head] = item;
-    size_t new_head = queue->head++;
+    size_t new_head = ++queue->head;
     queue->head = new_head % queue->size;
     queue->cnt++;
 }
@@ -52,7 +52,7 @@ static void queue_enqueue(struct queue *queue, uint32_t item)
 static uint32_t queue_dequeue(struct queue *queue)
 {
     uint32_t ret = queue->data[queue->tail];
-    size_t new_tail = queue->tail++;
+    size_t new_tail = ++queue->tail;
     queue->tail = new_tail % queue->size;
     queue->cnt--;
     return ret;
@@ -80,6 +80,7 @@ ga_status_t ga_find_shortest_way(graph_inst_t *gi, uint32_t from, uint32_t to,
         out[0] = from;
         *out_path = out;
         *out_length = 1;
+        return ret_val;
     }
 
     bool* visited = calloc(vert_cnt, sizeof(bool));
@@ -157,9 +158,10 @@ check_path:
             out_size = idx;
         }   
     }
+    
 
-    // revers
-    for (uint32_t i = 0; i < out_size/2; ++i){
+    // reverse
+    for (uint32_t i = 0; i < idx / 2; ++i){
         uint32_t tmp = out[i];
         out[i] = out[out_size - i - 1];
         out[out_size - i - 1] = tmp;

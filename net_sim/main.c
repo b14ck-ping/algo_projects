@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <stdbool.h>
 
 #include "graph.h"
 #include "graph_algorithms.h"
@@ -409,6 +410,135 @@ static void test_bfs_shortest(void)
 }
 
 
+/* BFS: start and destination are the same vertex */
+static void test_bfs_same_vertex(void)
+{
+    graph_inst_t *g = graph_create();
+    CHECK(g != NULL);
+
+    CHECK(add_vertex(g) == 0);
+
+    uint32_t *path = NULL;
+    size_t length = 0;
+
+    CHECK(ga_find_shortest_way(g, 0, 0, &path, &length)
+          == GA_STATUS_OK);
+
+    CHECK(path != NULL);
+    CHECK(length == 1);
+    CHECK(path[0] == 0);
+
+    free(path);
+    graph_free(g);
+}
+
+/* BFS: no connection between two components */
+static void test_bfs_unreachable(void)
+{
+    graph_inst_t *g = graph_create();
+    CHECK(g != NULL);
+
+    for (int i = 0; i < 5; ++i)
+        add_vertex(g);
+
+    /* 0 -- 1 -- 2     3 -- 4 */
+    CHECK(graph_add_edge(g, 0, 1) == GRAPH_STATUS_OK);
+    CHECK(graph_add_edge(g, 1, 2) == GRAPH_STATUS_OK);
+    CHECK(graph_add_edge(g, 3, 4) == GRAPH_STATUS_OK);
+
+    uint32_t *path = NULL;
+    size_t length = 0;
+
+    CHECK(ga_find_shortest_way(g, 0, 4, &path, &length)
+          == GA_ERROR_CANT_FIND_PATH);
+
+    CHECK(path == NULL);
+    CHECK(length == 0);
+
+    graph_free(g);
+}
+
+/* BFS: invalid vertex IDs and empty graph */
+static void test_bfs_invalid_vertices(void)
+{
+    graph_inst_t *g = graph_create();
+    CHECK(g != NULL);
+
+    uint32_t *path = NULL;
+    size_t length = 0;
+
+    /* Empty graph */
+    CHECK(ga_find_shortest_way(g, 0, 0, &path, &length)
+          == GA_ERROR_VERTEX_IS_NOT_EXIST);
+
+    add_vertex(g);
+
+    CHECK(ga_find_shortest_way(g, 0, 1, &path, &length)
+          == GA_ERROR_VERTEX_IS_NOT_EXIST);
+
+    CHECK(ga_find_shortest_way(g, UINT32_MAX, 0,
+                               &path, &length)
+          == GA_ERROR_VERTEX_IS_NOT_EXIST);
+
+    CHECK(ga_find_shortest_way(NULL, 0, 0, &path, &length)
+          == GA_ERROR_BAD_ARG);
+
+    graph_free(g);
+}
+
+/*
+ * BFS: multiple routes with equal shortest distance
+ *
+ *     1 --- 3
+ *    /       \
+ *   0         5
+ *    \       /
+ *     2 --- 4
+ *
+ * Correct result:
+ * 0 -> 1 -> 3 -> 5
+ * or
+ * 0 -> 2 -> 4 -> 5
+ */
+static void test_bfs_multiple_paths(void)
+{
+    graph_inst_t *g = graph_create();
+    CHECK(g != NULL);
+
+    for (int i = 0; i < 6; ++i)
+        add_vertex(g);
+
+    CHECK(graph_add_edge(g, 0, 1) == GRAPH_STATUS_OK);
+    CHECK(graph_add_edge(g, 0, 2) == GRAPH_STATUS_OK);
+    CHECK(graph_add_edge(g, 1, 3) == GRAPH_STATUS_OK);
+    CHECK(graph_add_edge(g, 2, 4) == GRAPH_STATUS_OK);
+    CHECK(graph_add_edge(g, 3, 5) == GRAPH_STATUS_OK);
+    CHECK(graph_add_edge(g, 4, 5) == GRAPH_STATUS_OK);
+
+    uint32_t *path = NULL;
+    size_t length = 0;
+
+    CHECK(ga_find_shortest_way(g, 0, 5, &path, &length)
+          == GA_STATUS_OK);
+
+    CHECK(path != NULL);
+    CHECK(length == 4);
+    CHECK(path[0] == 0);
+    CHECK(path[3] == 5);
+
+    bool first_route =
+        path[1] == 1 && path[2] == 3;
+
+    bool second_route =
+        path[1] == 2 && path[2] == 4;
+
+    CHECK(first_route || second_route);
+
+    free(path);
+    graph_free(g);
+}
+
+
 int main(void)
 {
     printf("=== Graph Core Tests ===\n\n");
@@ -422,11 +552,16 @@ int main(void)
     RUN_TEST(test_invalid_arguments);
     RUN_TEST(test_many_neighbours);
     RUN_TEST(test_large_graph);
-
+    
     printf("\nAll graph tests passed!\n");
 
     test_bfs_simple();
     test_bfs_shortest();
+
+    RUN_TEST(test_bfs_same_vertex);
+    RUN_TEST(test_bfs_unreachable);
+    RUN_TEST(test_bfs_invalid_vertices);
+    RUN_TEST(test_bfs_multiple_paths);
 
     puts("All BFS tests passed!");
 
