@@ -65,6 +65,9 @@ ga_status_t ga_find_shortest_way(graph_inst_t *gi, uint32_t from, uint32_t to,
     if (!gi || !out_path || !out_length)
         return GA_ERROR_BAD_ARG;
 
+    *out_path = NULL;
+    *out_length = 0;
+
     uint32_t vert_cnt = 0;
     if (graph_get_vertices_cnt(gi, &vert_cnt))
         return GA_ERROR_BAD_GRAPH;
@@ -108,8 +111,11 @@ ga_status_t ga_find_shortest_way(graph_inst_t *gi, uint32_t from, uint32_t to,
         const uint32_t *neighbours = NULL;
         uint32_t neghbours_cnt = 0;
         if (graph_get_neighbours(gi, cur_vertex, 
-                        &neighbours, &neghbours_cnt) != GRAPH_STATUS_OK)
+                        &neighbours, &neghbours_cnt) != GRAPH_STATUS_OK){
+            ret_val = GA_ERROR_BAD_GRAPH;
             goto err_exit;
+        }
+            
 
         for (uint32_t i = 0; i < neghbours_cnt; ++i){
             uint32_t neighbour = neighbours[i];
@@ -168,7 +174,7 @@ check_path:
     }
 
     *out_path = out;
-    *out_length = out_size;
+    *out_length = idx;
     
 err_exit:    
     free(visited);
