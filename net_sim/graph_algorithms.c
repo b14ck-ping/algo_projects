@@ -63,6 +63,9 @@ ga_status_t ga_find_shortest_way(graph_inst_t *gi, uint32_t from, uint32_t to,
     if (graph_get_vertices_cnt(gi, &vert_cnt))
         return GA_ERROR_BAD_GRAPH;
 
+    if(from >= vert_cnt || to >= vert_cnt)
+        return GA_ERROR_VERTEX_IS_NOT_EXIST;
+
     bool* visited = calloc(vert_cnt, sizeof(bool));
     if(!visited)
         return GA_ERROR_MEMALLOC;
@@ -84,7 +87,6 @@ ga_status_t ga_find_shortest_way(graph_inst_t *gi, uint32_t from, uint32_t to,
 
     while (!queue_is_empty(queue)){
         uint32_t cur_vertex = queue_dequeue(queue);
-        visited[cur_vertex] = true;
 
         const uint32_t *neighbours = NULL;
         uint32_t neghbours_cnt = 0;
@@ -104,6 +106,7 @@ ga_status_t ga_find_shortest_way(graph_inst_t *gi, uint32_t from, uint32_t to,
             }
 
             parent[neighbour] = cur_vertex;
+            visited[neighbour] = true;
             queue_enqueue(queue, neighbour);
         }
     }
