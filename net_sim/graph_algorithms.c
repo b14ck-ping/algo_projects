@@ -14,6 +14,7 @@ struct queue {
     size_t size;
     size_t head;
     size_t tail;
+    size_t cnt;
     uint32_t data[];
 };
 
@@ -25,6 +26,7 @@ static struct queue* queue_create(size_t size)
 
     buff->head = 0;
     buff->tail = 0;
+    buff->cnt = 0;
     buff->size = size;
     return buff;
 }
@@ -36,19 +38,23 @@ static void queue_free(struct queue *queue)
 
 static bool queue_is_empty(struct queue *queue)
 {
-    return queue->tail == queue->head;
+    return queue->cnt == 0;
 }
 
 static void queue_enqueue(struct queue *queue, uint32_t item)
 {
     queue->data[queue->head] = item;
-    queue->head = ++queue->head % queue->size;
+    size_t new_head = queue->head++;
+    queue->head = new_head % queue->size;
+    queue->cnt++;
 }
 
 static uint32_t queue_dequeue(struct queue *queue)
 {
     uint32_t ret = queue->data[queue->tail];
-    queue->tail = ++queue->tail % queue->size;
+    size_t new_tail = queue->tail++;
+    queue->tail = new_tail % queue->size;
+    queue->cnt--;
     return ret;
 }
 
@@ -65,6 +71,16 @@ ga_status_t ga_find_shortest_way(graph_inst_t *gi, uint32_t from, uint32_t to,
 
     if(from >= vert_cnt || to >= vert_cnt)
         return GA_ERROR_VERTEX_IS_NOT_EXIST;
+
+    if (from == to){
+        uint32_t *out = calloc(1, sizeof(uint32_t));
+        if (!out){
+            return GA_ERROR_MEMALLOC;
+        }
+        out[0] = from;
+        *out_path = out;
+        *out_length = 1;
+    }
 
     bool* visited = calloc(vert_cnt, sizeof(bool));
     if(!visited)
@@ -92,7 +108,7 @@ ga_status_t ga_find_shortest_way(graph_inst_t *gi, uint32_t from, uint32_t to,
         uint32_t neghbours_cnt = 0;
         if (graph_get_neighbours(gi, cur_vertex, 
                         &neighbours, &neghbours_cnt) != GRAPH_STATUS_OK)
-            continue;
+            goto err_exit;
 
         for (uint32_t i = 0; i < neghbours_cnt; ++i){
             uint32_t neighbour = neighbours[i];
@@ -135,8 +151,11 @@ check_path:
 
 
     if (idx < out_size){
-        out = realloc(out, idx*sizeof(uint32_t));
-        out_size = idx;
+        uint32_t *out_b = realloc(out, idx*sizeof(uint32_t));
+        if (out_b){
+            out = out_b;
+            out_size = idx;
+        }   
     }
 
     // revers

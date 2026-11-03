@@ -167,7 +167,7 @@ graph_status_t graph_get_neighbours(graph_inst_t *graph, uint32_t vertex_id,
 
 graph_status_t graph_get_vertices_cnt(graph_inst_t *graph, uint32_t* vertices_cnt)
 {
-    if (!graph)
+    if (!graph || !vertices_cnt)
         return GRAPH_ERROR_BAD_ARG;
 
     *vertices_cnt = graph->vert_cnt;
