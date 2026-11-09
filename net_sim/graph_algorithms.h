@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 #include "graph.h"
 
@@ -26,5 +27,6 @@ ga_status_t ga_find_components(graph_inst_t *graph, uint32_t **out_components,
                                                     uint32_t *out_vertices_count, 
                                                     uint32_t *out_components_count);
 
+ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle);
 
 #endif // GRAPH_ALGORITHMS_H

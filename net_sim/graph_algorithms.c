@@ -1,5 +1,5 @@
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <memory.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -9,6 +9,7 @@
 #include "graph_algorithms.h"
 
 #define COMPONENT_UNVISITED UINT32_MAX
+#define WITHOUT_PARENT UINT32_MAX
 
 struct queue {
     size_t size;
@@ -233,7 +234,9 @@ ga_status_t ga_find_components(graph_inst_t *graph, uint32_t **out_components, u
     *out_components_count = 0;
 
     uint32_t vertices_cnt = 0;
-    graph_get_vertices_cnt(graph, &vertices_cnt);
+    if(graph_get_vertices_cnt(graph, &vertices_cnt))
+        return GA_ERROR_BAD_GRAPH;
+
     if(!vertices_cnt)
         return GA_STATUS_OK;
 
@@ -300,5 +303,91 @@ ga_status_t ga_find_components(graph_inst_t *graph, uint32_t **out_components, u
 
     stack_free(stk);
 
+    return ret_val;
+}
+
+ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle)
+{
+    ga_status_t ret_val = GA_STATUS_OK;
+    bool out = false;
+
+    if (!graph || !out_has_cycle )
+        return GA_ERROR_BAD_ARG;
+
+    *out_has_cycle = false;
+
+    uint32_t vertices_cnt = 0;
+    if(graph_get_vertices_cnt(graph, &vertices_cnt))
+        return GA_ERROR_BAD_GRAPH;
+
+    if(!vertices_cnt)
+        return GA_STATUS_OK;
+
+    if(vertices_cnt < 3){
+        return GA_STATUS_OK;
+    }
+
+    bool *visited = calloc(vertices_cnt, sizeof(*visited));
+    if(!visited)
+        return GA_ERROR_MEMALLOC;
+
+    memset(visited, 0x00, vertices_cnt*sizeof(*visited));
+
+    uint32_t *parents = calloc(vertices_cnt, sizeof(*parents));
+    if(!parents){
+        free(visited);
+        return GA_ERROR_MEMALLOC;
+    }
+        
+    memset(parents, 0xFF, vertices_cnt*sizeof(*parents));
+
+    struct stack *stk = stack_create(vertices_cnt);
+    if(!stk){
+        free(visited);
+        free(parents);
+        return GA_ERROR_MEMALLOC;
+    }
+
+    for(uint32_t i = 0; i < vertices_cnt; i++){
+        if (visited[i])
+            continue;
+
+        stack_push(stk, i);
+        visited[i] = true;
+
+        while(!stack_is_empty(stk)){
+            uint32_t cur_vertex = stack_pop(stk);
+
+            const uint32_t *neighbours = NULL;
+            uint32_t neghbours_cnt = 0;
+            if (graph_get_neighbours(graph, cur_vertex, 
+                            &neighbours, &neghbours_cnt) != GRAPH_STATUS_OK){
+                ret_val = GA_ERROR_BAD_GRAPH;
+                goto free_exit;
+            }
+                
+
+            for (uint32_t j = 0; j < neghbours_cnt; ++j){
+                uint32_t neighbour = neighbours[j];
+                if (visited[neighbour] && parents[cur_vertex] != neighbour){
+                    out = true;
+                    goto free_exit;
+                } else if (visited[neighbour])
+                    continue;
+
+                visited[neighbour] = true;
+                parents[neighbour] = cur_vertex;
+                stack_push(stk, neighbour);
+            }
+        }
+    }
+
+
+
+free_exit:
+    stack_free(stk);
+    free(visited);
+    free(parents);
+    *out_has_cycle = out;
     return ret_val;
 }

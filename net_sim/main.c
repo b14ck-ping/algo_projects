@@ -696,6 +696,189 @@ static void test_components_single_vertex(void)
 }
 
 
+/* ---------- Test 1: empty graph ---------- */
+
+static void test_cycle_empty(void)
+{
+    graph_inst_t *graph = make_graph_checked(0);
+    bool has_cycle = true;
+
+    CHECK(ga_has_cycle(graph, &has_cycle) == GA_STATUS_OK);
+    CHECK(has_cycle == false);
+
+    graph_free(graph);
+}
+
+/* ---------- Test 2: single vertex ---------- */
+
+static void test_cycle_single_vertex(void)
+{
+    graph_inst_t *graph = make_graph_checked(1);
+    bool has_cycle = true;
+
+    CHECK(ga_has_cycle(graph, &has_cycle) == GA_STATUS_OK);
+    CHECK(has_cycle == false);
+
+    graph_free(graph);
+}
+
+/* ---------- Test 3: chain without cycles ---------- */
+
+/*
+ * 0 --- 1 --- 2 --- 3 --- 4 --- 5
+ */
+
+static void test_cycle_chain(void)
+{
+    graph_inst_t *graph = make_graph_checked(6);
+
+    for (uint32_t i = 0; i < 5; ++i)
+        connect(graph, i, i + 1);
+
+    bool has_cycle = true;
+
+    CHECK(ga_has_cycle(graph, &has_cycle) == GA_STATUS_OK);
+    CHECK(has_cycle == false);
+
+    graph_free(graph);
+}
+
+/* ---------- Test 4: triangle ---------- */
+
+/*
+ * 0 --- 1
+ *  \   /
+ *    2
+ */
+
+static void test_cycle_triangle(void)
+{
+    graph_inst_t *graph = make_graph_checked(3);
+
+    connect(graph, 0, 1);
+    connect(graph, 1, 2);
+    connect(graph, 2, 0);
+
+    bool has_cycle = false;
+
+    CHECK(ga_has_cycle(graph, &has_cycle) == GA_STATUS_OK);
+    CHECK(has_cycle == true);
+
+    graph_free(graph);
+}
+
+/* ---------- Test 5: tree without cycles ---------- */
+
+/*
+ *       0
+ *      / \
+ *     1   2
+ *    / \   \
+ *   3   4   5
+ */
+
+static void test_cycle_tree(void)
+{
+    graph_inst_t *graph = make_graph_checked(6);
+
+    connect(graph, 0, 1);
+    connect(graph, 0, 2);
+    connect(graph, 1, 3);
+    connect(graph, 1, 4);
+    connect(graph, 2, 5);
+
+    bool has_cycle = true;
+
+    CHECK(ga_has_cycle(graph, &has_cycle) == GA_STATUS_OK);
+    CHECK(has_cycle == false);
+
+    graph_free(graph);
+}
+
+/* ---------- Test 6: disconnected graph with cycle ---------- */
+
+/*
+ * Component A: 0 --- 1 --- 2
+ *
+ * Component B: 3 --- 4
+ *               \   /
+ *                 5
+ *
+ * Component C: 6 (isolated)
+ */
+
+static void test_cycle_disconnected(void)
+{
+    graph_inst_t *graph = make_graph_checked(7);
+
+    connect(graph, 0, 1);
+    connect(graph, 1, 2);
+
+    connect(graph, 3, 4);
+    connect(graph, 4, 5);
+    connect(graph, 5, 3);
+
+    bool has_cycle = false;
+
+    CHECK(ga_has_cycle(graph, &has_cycle) == GA_STATUS_OK);
+    CHECK(has_cycle == true);
+
+    graph_free(graph);
+}
+
+/* ---------- Test 7: all isolated vertices ---------- */
+
+static void test_cycle_isolated(void)
+{
+    graph_inst_t *graph = make_graph_checked(10);
+
+    bool has_cycle = true;
+
+    CHECK(ga_has_cycle(graph, &has_cycle) == GA_STATUS_OK);
+    CHECK(has_cycle == false);
+
+    graph_free(graph);
+}
+
+/* ---------- Test 8: cycle at the end of a long chain ---------- */
+
+/*
+ * 0 -- 1 -- 2 -- 3 -- 4 -- 5
+ *                       |    |
+ *                       7 -- 6
+ */
+
+static void test_cycle_deep(void)
+{
+    graph_inst_t *graph = make_graph_checked(8);
+
+    for (uint32_t i = 0; i < 7; ++i)
+        connect(graph, i, i + 1);
+
+    connect(graph, 7, 4);
+
+    bool has_cycle = false;
+
+    CHECK(ga_has_cycle(graph, &has_cycle) == GA_STATUS_OK);
+    CHECK(has_cycle == true);
+
+    graph_free(graph);
+}
+
+/* ---------- Test 9: invalid arguments ---------- */
+
+static void test_cycle_invalid_args(void)
+{
+    graph_inst_t *graph = make_graph_checked(3);
+    bool has_cycle = false;
+
+    CHECK(ga_has_cycle(NULL, &has_cycle) == GA_ERROR_BAD_ARG);
+    CHECK(ga_has_cycle(graph, NULL) == GA_ERROR_BAD_ARG);
+
+    graph_free(graph);
+}
+
+
 int main(void)
 {
     printf("=== Graph Core Tests ===\n\n");
@@ -729,6 +912,18 @@ int main(void)
     RUN_TEST(test_components_single_vertex);
 
     puts("All components tests passed!");
+
+    RUN_TEST(test_cycle_empty);
+    RUN_TEST(test_cycle_single_vertex);
+    RUN_TEST(test_cycle_chain);
+    RUN_TEST(test_cycle_triangle);
+    RUN_TEST(test_cycle_tree);
+    RUN_TEST(test_cycle_disconnected);
+    RUN_TEST(test_cycle_isolated);
+    RUN_TEST(test_cycle_deep);
+    RUN_TEST(test_cycle_invalid_args);
+
+    puts("All cycle detection tests passed!");
 
     return EXIT_SUCCESS;
 }
