@@ -539,6 +539,138 @@ static void test_bfs_multiple_paths(void)
 }
 
 
+/* ---------- Helpers for component tests ---------- */
+
+static graph_inst_t *make_graph_checked(uint32_t count)
+{
+    graph_inst_t *graph = graph_create();
+    CHECK(graph != NULL);
+
+    for (uint32_t i = 0; i < count; ++i)
+        CHECK(add_vertex(graph) == i);
+
+    return graph;
+}
+
+static void connect(graph_inst_t *graph, uint32_t a, uint32_t b)
+{
+    CHECK(graph_add_edge(graph, a, b) == GRAPH_STATUS_OK);
+}
+
+
+static void check_component_partition(
+    graph_inst_t *graph,
+    const uint32_t *expected_groups,
+    uint32_t vertices_count,
+    uint32_t expected_count)
+{
+    uint32_t *actual_ids = NULL;
+    uint32_t actual_comp_count = UINT32_MAX;
+    uint32_t actual_vert_count = UINT32_MAX;
+
+    CHECK(ga_find_components(
+        graph, &actual_ids, &actual_vert_count, &actual_comp_count) == GA_STATUS_OK);
+
+    CHECK(actual_vert_count == vertices_count);
+    CHECK(actual_comp_count == expected_count);
+    CHECK(actual_ids != NULL || vertices_count == 0);
+
+    for (uint32_t i = 0; i < vertices_count; ++i) {
+        for (uint32_t j = i + 1; j < vertices_count; ++j) {
+            bool expected_same =
+                expected_groups[i] == expected_groups[j];
+
+            bool actual_same =
+                actual_ids[i] == actual_ids[j];
+
+            CHECK(expected_same == actual_same);
+        }
+    }
+
+    free(actual_ids);
+}
+
+
+/* ---------- Test 1: empty graph ---------- */
+
+static void test_components_empty(void)
+{
+    graph_inst_t *graph = make_graph_checked(0);
+
+    uint32_t dummy = 0;
+    uint32_t *components = &dummy;
+    uint32_t vert_count = UINT32_MAX;
+    uint32_t comp_count = UINT32_MAX;
+
+    CHECK(ga_find_components(
+        graph, &components, &vert_count, &comp_count) == GA_STATUS_OK);
+
+    CHECK(components == NULL);
+    CHECK(comp_count == 0);
+    CHECK(vert_count == 0);
+
+    graph_free(graph);
+}
+
+/* ---------- Test 2: all vertices are isolated ---------- */
+
+static void test_components_isolated(void)
+{
+    graph_inst_t *graph = make_graph_checked(5);
+
+    const uint32_t groups[] = {0, 1, 2, 3, 4};
+
+    check_component_partition(graph, groups, 5, 5);
+
+    graph_free(graph);
+}
+/* ---------- Test 3: one connected component with cycles ---------- */
+
+static void test_components_single_connected(void)
+{
+    graph_inst_t *graph = make_graph_checked(6);
+
+    for (uint32_t i = 0; i < 6; ++i) {
+        for (uint32_t j = i + 1; j < 6; ++j)
+            connect(graph, i, j);
+    }
+
+    const uint32_t groups[] = {0, 0, 0, 0, 0, 0};
+
+    check_component_partition(graph, groups, 6, 1);
+
+    graph_free(graph);
+}
+
+
+/* ---------- Test 4: multiple components ---------- */
+
+static void test_components_multiple(void)
+{
+    graph_inst_t *graph = make_graph_checked(9);
+
+    connect(graph, 0, 1);
+    connect(graph, 1, 2);
+    connect(graph, 2, 0);
+
+    connect(graph, 3, 4);
+
+    connect(graph, 6, 7);
+    connect(graph, 7, 8);
+
+    const uint32_t groups[] = {
+        0, 0, 0,
+        1, 1,
+        2,
+        3, 3, 3
+    };
+
+    check_component_partition(graph, groups, 9, 4);
+
+    graph_free(graph);
+}
+
+
 int main(void)
 {
     printf("=== Graph Core Tests ===\n\n");
@@ -564,6 +696,13 @@ int main(void)
     RUN_TEST(test_bfs_multiple_paths);
 
     puts("All BFS tests passed!");
+
+    RUN_TEST(test_components_empty);
+    RUN_TEST(test_components_isolated);
+    RUN_TEST(test_components_single_connected);
+    RUN_TEST(test_components_multiple);
+
+    puts("All components tests passed!");
 
     return EXIT_SUCCESS;
 }

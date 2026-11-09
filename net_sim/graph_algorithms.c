@@ -8,7 +8,7 @@
 
 #include "graph_algorithms.h"
 
-
+#define COMPONENT_UNVISITED UINT32_MAX
 
 struct queue {
     size_t size;
@@ -180,6 +180,126 @@ err_exit:
     free(visited);
     free(parent);
     queue_free(queue);
+
+    return ret_val;
+}
+
+struct stack {
+    uint32_t stack_capacity;
+    uint32_t stack_hight;
+    uint32_t stack[];
+};
+
+static struct stack *stack_create(uint32_t cap)
+{
+    struct stack *stack = malloc(sizeof(struct stack) + cap*sizeof(uint32_t));
+    if (!stack)
+        return NULL;
+
+    stack->stack_capacity = cap;
+    stack->stack_hight = 0;
+    return stack;
+}
+
+static void stack_free(struct stack *stack)
+{
+    free(stack);
+}
+
+static void stack_push(struct stack *stack, uint32_t item)
+{
+    stack->stack[stack->stack_hight++] = item;
+}
+
+static uint32_t stack_pop(struct stack *stack)
+{
+    return stack->stack[--stack->stack_hight];
+}
+
+static bool stack_is_empty(struct stack *stack)
+{
+    return stack->stack_hight == 0;
+}
+
+
+ga_status_t ga_find_components(graph_inst_t *graph, uint32_t **out_components, uint32_t *out_vertices_count, uint32_t *out_components_count)
+{
+    ga_status_t ret_val = GA_STATUS_OK;
+    if (!graph || !out_components || !out_vertices_count || !out_components_count)
+        return GA_ERROR_BAD_ARG;
+
+    *out_components = NULL;
+    *out_vertices_count = 0;
+    *out_components_count = 0;
+
+    uint32_t vertices_cnt = 0;
+    graph_get_vertices_cnt(graph, &vertices_cnt);
+    if(!vertices_cnt)
+        return GA_STATUS_OK;
+
+    if(vertices_cnt == 1){
+        uint32_t *out = malloc(sizeof(uint32_t));
+        if (!out)
+            return GA_ERROR_MEMALLOC;
+
+        *out_components = out;
+        out_components[0] = 0;
+        *out_vertices_count = 1;
+        *out_components_count = 1;
+        return GA_STATUS_OK;
+    }
+
+    uint32_t *components = calloc(vertices_cnt, sizeof(uint32_t));
+    if(!components)
+        return GA_ERROR_MEMALLOC;
+
+    memset(components, 0xFF, vertices_cnt*sizeof(*components));
+
+    struct stack *stk = stack_create(vertices_cnt);
+    if(!stk){
+        free(components);
+        return GA_ERROR_MEMALLOC;
+    }
+        
+    uint32_t component_idx = 0;
+    for(uint32_t i = 0; i < vertices_cnt; i++){
+        if (components[i] != COMPONENT_UNVISITED)
+            continue;
+
+        stack_push(stk, i);
+        components[i] = component_idx;
+
+        while(!stack_is_empty(stk)){
+            uint32_t cur_vertex = stack_pop(stk);
+
+            const uint32_t *neighbours = NULL;
+            uint32_t neghbours_cnt = 0;
+            if (graph_get_neighbours(graph, cur_vertex, 
+                            &neighbours, &neghbours_cnt) != GRAPH_STATUS_OK){
+                free(components);
+                stack_free(stk);
+                return GA_ERROR_BAD_GRAPH;
+            }
+                
+
+            for (uint32_t j = 0; j < neghbours_cnt; ++j){
+                uint32_t neighbour = neighbours[j];
+                if (components[neighbour] != COMPONENT_UNVISITED)
+                    continue;
+
+                components[neighbour] = component_idx;
+                stack_push(stk, neighbour);
+            }
+        }
+        component_idx++;
+    }
+
+    assert(component_idx <= vertices_cnt);
+    *out_components = components;
+    *out_vertices_count = vertices_cnt;
+    *out_components_count = component_idx;
+
+    stack_free(stk);
 
     return ret_val;
 }
