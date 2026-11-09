@@ -671,6 +671,31 @@ static void test_components_multiple(void)
 }
 
 
+static void test_components_single_vertex(void)
+{
+    graph_inst_t *graph = make_graph_checked(1);
+
+    uint32_t *components = NULL;
+    uint32_t vertices_count = 0;
+    uint32_t components_count = 0;
+
+    CHECK(ga_find_components(
+        graph,
+        &components,
+        &vertices_count,
+        &components_count
+    ) == GA_STATUS_OK);
+
+    CHECK(components != NULL);
+    CHECK(vertices_count == 1);
+    CHECK(components_count == 1);
+    CHECK(components[0] != UINT32_MAX);
+
+    free(components);
+    graph_free(graph);
+}
+
+
 int main(void)
 {
     printf("=== Graph Core Tests ===\n\n");
@@ -701,6 +726,7 @@ int main(void)
     RUN_TEST(test_components_isolated);
     RUN_TEST(test_components_single_connected);
     RUN_TEST(test_components_multiple);
+    RUN_TEST(test_components_single_vertex);
 
     puts("All components tests passed!");
 

@@ -169,8 +169,8 @@ check_path:
     // reverse
     for (uint32_t i = 0; i < idx / 2; ++i){
         uint32_t tmp = out[i];
-        out[i] = out[out_size - i - 1];
-        out[out_size - i - 1] = tmp;
+        out[i] = out[idx - i - 1];
+        out[idx - i - 1] = tmp;
     }
 
     *out_path = out;
@@ -241,9 +241,8 @@ ga_status_t ga_find_components(graph_inst_t *graph, uint32_t **out_components, u
         uint32_t *out = malloc(sizeof(uint32_t));
         if (!out)
             return GA_ERROR_MEMALLOC;
-
+        out[0] = 0;
         *out_components = out;
-        out_components[0] = 0;
         *out_vertices_count = 1;
         *out_components_count = 1;
         return GA_STATUS_OK;
