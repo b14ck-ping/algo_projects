@@ -152,14 +152,17 @@ graph_status_t graph_add_weighted_edge(graph_inst_t *graph, uint32_t vertex_a_id
     if(_check_vertices_has_edge(graph, vertex_a_id, vertex_b_id))
         return GRAPH_STATUS_OK;
 
-    if(_check_vertex_neighbour_slots(graph, vertex_a_id)
-        || _check_vertex_neighbour_slots(graph, vertex_b_id))
+    if (_check_vertex_neighbour_slots(graph, vertex_a_id))
+        return GRAPH_ERROR_MEMALLOC_ERROR;
+
+    if (graph->type == GRAPH_UNDIRECTED &&
+        _check_vertex_neighbour_slots(graph, vertex_b_id))
         return GRAPH_ERROR_MEMALLOC_ERROR;
     
 
     graph->vertices[vertex_a_id].neighbours[graph->vertices[vertex_a_id].neighbours_cnt++] = (graph_edge_t){ .vertex_id = vertex_b_id, .weight = weight};
     if (graph->type == GRAPH_UNDIRECTED){
-        graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++] = (graph_edge_t){ .vertex_id = vertex_b_id, .weight = weight};
+        graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++] = (graph_edge_t){ .vertex_id = vertex_a_id, .weight = weight};
     }
 
 

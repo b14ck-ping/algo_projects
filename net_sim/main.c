@@ -69,6 +69,44 @@ static void check_degree(graph_inst_t *graph,
     CHECK(count == 0 || list != NULL);
 }
 
+
+static void check_edge(graph_inst_t *graph,
+                       uint32_t from,
+                       uint32_t to,
+                       uint32_t expected_weight)
+{
+    const graph_edge_t *edges = NULL;
+    uint32_t count = 0;
+    uint32_t matches = 0;
+
+    CHECK(graph_get_neighbours(graph, from, &edges, &count)
+          == GRAPH_STATUS_OK);
+
+    for (uint32_t i = 0; i < count; ++i) {
+        if (edges[i].vertex_id == to) {
+            CHECK(edges[i].weight == expected_weight);
+            ++matches;
+        }
+    }
+
+    // Ребро существует ровно в одном экземпляре
+    CHECK(matches == 1);
+}
+
+static void check_no_edge(graph_inst_t *graph,
+                          uint32_t from,
+                          uint32_t to)
+{
+    const graph_edge_t *edges = NULL;
+    uint32_t count = 0;
+
+    CHECK(graph_get_neighbours(graph, from, &edges, &count)
+          == GRAPH_STATUS_OK);
+
+    for (uint32_t i = 0; i < count; ++i)
+        CHECK(edges[i].vertex_id != to);
+}
+
 /* ---------- Test 1: creation and empty graph ---------- */
 
 static void test_create_free(void)
@@ -879,6 +917,207 @@ static void test_cycle_invalid_args(void)
 }
 
 
+/* ---------- Weighted undirected edges ---------- */
+
+static void test_weighted_undirected(void)
+{
+    graph_inst_t *g = graph_create(GRAPH_UNDIRECTED);
+    CHECK(g != NULL);
+
+    add_vertex(g); // 0
+    add_vertex(g); // 1
+    add_vertex(g); // 2
+
+    CHECK(graph_add_weighted_edge(g, 0, 1, 15)
+          == GRAPH_STATUS_OK);
+    CHECK(graph_add_weighted_edge(g, 1, 2, 42)
+          == GRAPH_STATUS_OK);
+
+    check_edge(g, 0, 1, 15);
+    check_edge(g, 1, 0, 15);
+    check_edge(g, 1, 2, 42);
+    check_edge(g, 2, 1, 42);
+
+    check_degree(g, 0, 1);
+    check_degree(g, 1, 2);
+    check_degree(g, 2, 1);
+
+    check_no_edge(g, 0, 2);
+    check_no_edge(g, 2, 0);
+
+    graph_free(g);
+}
+
+/* ---------- Directed edges ---------- */
+
+static void test_directed_edges(void)
+{
+    graph_inst_t *g = graph_create(GRAPH_DIRECTED);
+    CHECK(g != NULL);
+
+    add_vertex(g); // 0
+    add_vertex(g); // 1
+    add_vertex(g); // 2
+
+    CHECK(graph_add_edge(g, 0, 1) == GRAPH_STATUS_OK);
+    CHECK(graph_add_edge(g, 1, 2) == GRAPH_STATUS_OK);
+
+    check_edge(g, 0, 1, 1);
+    check_edge(g, 1, 2, 1);
+
+    check_no_edge(g, 1, 0);
+    check_no_edge(g, 2, 1);
+
+    check_degree(g, 0, 1);
+    check_degree(g, 1, 1);
+    check_degree(g, 2, 0);
+
+    graph_free(g);
+}
+
+/* ---------- Duplicate directed edge to sink ---------- */
+
+static void test_directed_duplicate(void)
+{
+    graph_inst_t *g = graph_create(GRAPH_DIRECTED);
+    CHECK(g != NULL);
+
+    add_vertex(g); // 0
+    add_vertex(g); // 1
+
+    // Вершина 1 не имеет исходящих рёбер
+    CHECK(graph_add_weighted_edge(g, 0, 1, 7)
+          == GRAPH_STATUS_OK);
+
+    CHECK(graph_add_weighted_edge(g, 0, 1, 7)
+          == GRAPH_STATUS_OK);
+
+    check_degree(g, 0, 1);
+    check_degree(g, 1, 0);
+
+    check_edge(g, 0, 1, 7);
+    check_no_edge(g, 1, 0);
+
+    graph_free(g);
+}
+
+/* ---------- Independent opposite directed edges ---------- */
+
+static void test_directed_opposite_edges(void)
+{
+    graph_inst_t *g = graph_create(GRAPH_DIRECTED);
+    CHECK(g != NULL);
+
+    add_vertex(g); // 0
+    add_vertex(g); // 1
+
+    CHECK(graph_add_weighted_edge(g, 0, 1, 10)
+          == GRAPH_STATUS_OK);
+
+    CHECK(graph_add_weighted_edge(g, 1, 0, 25)
+          == GRAPH_STATUS_OK);
+
+    check_edge(g, 0, 1, 10);
+    check_edge(g, 1, 0, 25);
+
+    check_degree(g, 0, 1);
+    check_degree(g, 1, 1);
+
+    graph_free(g);
+}
+
+/* ---------- Mixed weighted and default edges ---------- */
+
+static void test_mixed_weights(void)
+{
+    graph_inst_t *g = graph_create(GRAPH_UNDIRECTED);
+    CHECK(g != NULL);
+
+    for (uint32_t i = 0; i < 4; ++i)
+        add_vertex(g);
+
+    CHECK(graph_add_edge(g, 0, 1) == GRAPH_STATUS_OK);
+    CHECK(graph_add_weighted_edge(g, 1, 2, 0)
+          == GRAPH_STATUS_OK);
+    CHECK(graph_add_weighted_edge(g, 2, 3, UINT32_MAX)
+          == GRAPH_STATUS_OK);
+
+    check_edge(g, 0, 1, 1);
+    check_edge(g, 1, 0, 1);
+
+    check_edge(g, 1, 2, 0);
+    check_edge(g, 2, 1, 0);
+
+    check_edge(g, 2, 3, UINT32_MAX);
+    check_edge(g, 3, 2, UINT32_MAX);
+
+    graph_free(g);
+}
+
+/* ---------- Adjacency array expansion ---------- */
+
+static void test_weighted_edges_expansion(void)
+{
+    enum { VERTICES = 100 };
+
+    graph_inst_t *g = graph_create(GRAPH_DIRECTED);
+    CHECK(g != NULL);
+
+    for (uint32_t i = 0; i < VERTICES; ++i)
+        CHECK(add_vertex(g) == i);
+
+    // 99 исходящих рёбер из вершины 0.
+    // Превышаем начальную ёмкость массива (32).
+    for (uint32_t i = 1; i < VERTICES; ++i) {
+        CHECK(graph_add_weighted_edge(g, 0, i, i * 10)
+              == GRAPH_STATUS_OK);
+    }
+
+    check_degree(g, 0, VERTICES - 1);
+
+    for (uint32_t i = 1; i < VERTICES; ++i) {
+        check_edge(g, 0, i, i * 10);
+        check_no_edge(g, i, 0);
+        check_degree(g, i, 0);
+    }
+
+    graph_free(g);
+}
+
+/* ---------- Graph type and invalid arguments ---------- */
+
+static void test_weighted_graph_api(void)
+{
+    graph_inst_t *g = graph_create(GRAPH_DIRECTED);
+    CHECK(g != NULL);
+
+    graph_type_t type = GRAPH_UNDIRECTED;
+
+    CHECK(graph_get_type(g, &type) == GRAPH_STATUS_OK);
+    CHECK(type == GRAPH_DIRECTED);
+
+    CHECK(graph_get_type(NULL, &type) == GRAPH_ERROR_BAD_ARG);
+    CHECK(graph_get_type(g, NULL) == GRAPH_ERROR_BAD_ARG);
+
+    add_vertex(g); // 0
+    add_vertex(g); // 1
+
+    CHECK(graph_add_weighted_edge(NULL, 0, 1, 5)
+          == GRAPH_ERROR_BAD_ARG);
+
+    CHECK(graph_add_weighted_edge(g, 0, 0, 5)
+          == GRAPH_ERROR_LOOP);
+
+    CHECK(graph_add_weighted_edge(g, 0, 99, 5)
+          == GRAPH_ERROR_VERTEX_IS_NOT_EXIST);
+
+    // Ошибочные вызовы не должны добавлять рёбра
+    check_degree(g, 0, 0);
+    check_degree(g, 1, 0);
+
+    graph_free(g);
+}
+
 int main(void)
 {
     printf("=== Graph Core Tests ===\n\n");
@@ -894,6 +1133,16 @@ int main(void)
     RUN_TEST(test_large_graph);
     
     printf("\nAll graph tests passed!\n");
+
+    RUN_TEST(test_weighted_undirected);
+    RUN_TEST(test_directed_edges);
+    RUN_TEST(test_directed_duplicate);
+    RUN_TEST(test_directed_opposite_edges);
+    RUN_TEST(test_mixed_weights);
+    RUN_TEST(test_weighted_edges_expansion);
+    RUN_TEST(test_weighted_graph_api);
+
+    puts("All weighted/directed graph tests passed!");
 
     test_bfs_simple();
     test_bfs_shortest();
