@@ -39,7 +39,7 @@ static uint32_t count_neighbour(graph_inst_t *graph,
                                 uint32_t vertex,
                                 uint32_t neighbour)
 {
-    const uint32_t *list = NULL;
+    const graph_edge_t *list = NULL;
     uint32_t count = UINT32_MAX;
     uint32_t occurrences = 0;
 
@@ -49,7 +49,7 @@ static uint32_t count_neighbour(graph_inst_t *graph,
     CHECK(count == 0 || list != NULL);
 
     for (uint32_t i = 0; i < count; ++i) {
-        if (list[i] == neighbour)
+        if (list[i].vertex_id == neighbour)
             ++occurrences;
     }
 
@@ -60,7 +60,7 @@ static void check_degree(graph_inst_t *graph,
                          uint32_t vertex,
                          uint32_t expected)
 {
-    const uint32_t *list = NULL;
+    const graph_edge_t *list = NULL;
     uint32_t count = UINT32_MAX;
 
     CHECK(graph_get_neighbours(graph, vertex,
@@ -73,7 +73,7 @@ static void check_degree(graph_inst_t *graph,
 
 static void test_create_free(void)
 {
-    graph_inst_t *graph = graph_create();
+    graph_inst_t *graph = graph_create(GRAPH_UNDIRECTED);
 
     CHECK(graph != NULL);
 
@@ -85,7 +85,7 @@ static void test_create_free(void)
 
 static void test_vertex_ids(void)
 {
-    graph_inst_t *graph = graph_create();
+    graph_inst_t *graph = graph_create(GRAPH_UNDIRECTED);
     CHECK(graph != NULL);
 
     /*
@@ -105,7 +105,7 @@ static void test_vertex_ids(void)
 
 static void test_undirected_edges(void)
 {
-    graph_inst_t *graph = graph_create();
+    graph_inst_t *graph = graph_create(GRAPH_UNDIRECTED);
     CHECK(graph != NULL);
 
     uint32_t a = add_vertex(graph);
@@ -133,7 +133,7 @@ static void test_undirected_edges(void)
 
 static void test_duplicate_edges(void)
 {
-    graph_inst_t *graph = graph_create();
+    graph_inst_t *graph = graph_create(GRAPH_UNDIRECTED);
     CHECK(graph != NULL);
 
     uint32_t a = add_vertex(graph);
@@ -156,7 +156,7 @@ static void test_duplicate_edges(void)
 
 static void test_self_loop(void)
 {
-    graph_inst_t *graph = graph_create();
+    graph_inst_t *graph = graph_create(GRAPH_UNDIRECTED);
     CHECK(graph != NULL);
 
     uint32_t a = add_vertex(graph);
@@ -172,7 +172,7 @@ static void test_self_loop(void)
 
 static void test_isolated_vertices(void)
 {
-    graph_inst_t *graph = graph_create();
+    graph_inst_t *graph = graph_create(GRAPH_UNDIRECTED);
     CHECK(graph != NULL);
 
     uint32_t a = add_vertex(graph);
@@ -183,7 +183,7 @@ static void test_isolated_vertices(void)
 
     check_degree(graph, c, 0);
 
-    const uint32_t *list = (const uint32_t *)1;
+    const graph_edge_t *list = NULL;
     uint32_t count = UINT32_MAX;
 
     CHECK(graph_get_neighbours(graph, c,
@@ -198,7 +198,7 @@ static void test_isolated_vertices(void)
 
 static void test_invalid_arguments(void)
 {
-    graph_inst_t *graph = graph_create();
+    graph_inst_t *graph = graph_create(GRAPH_UNDIRECTED);
     CHECK(graph != NULL);
 
     uint32_t id = add_vertex(graph);
@@ -214,7 +214,7 @@ static void test_invalid_arguments(void)
     CHECK(graph_add_edge(graph, UINT32_MAX, 0)
           == GRAPH_ERROR_VERTEX_IS_NOT_EXIST);
 
-    const uint32_t *list = NULL;
+    const graph_edge_t *list = NULL;
     uint32_t count = 0;
 
     CHECK(graph_get_neighbours(NULL, 0, &list, &count)
@@ -236,7 +236,7 @@ static void test_invalid_arguments(void)
 
 static void test_many_neighbours(void)
 {
-    graph_inst_t *graph = graph_create();
+    graph_inst_t *graph = graph_create(GRAPH_UNDIRECTED);
     CHECK(graph != NULL);
 
     enum { VERTICES = 100 };
@@ -279,7 +279,7 @@ static void test_many_neighbours(void)
 
 static void test_large_graph(void)
 {
-    graph_inst_t *graph = graph_create();
+    graph_inst_t *graph = graph_create(GRAPH_UNDIRECTED);
     CHECK(graph != NULL);
 
     enum { VERTICES = 10000 };
@@ -311,7 +311,7 @@ static void test_large_graph(void)
 
 static graph_inst_t *create_graph(uint32_t count)
 {
-    graph_inst_t *g = graph_create();
+    graph_inst_t *g = graph_create(GRAPH_UNDIRECTED);
     assert(g);
 
     for (uint32_t i = 0; i < count; ++i) {
@@ -413,7 +413,7 @@ static void test_bfs_shortest(void)
 /* BFS: start and destination are the same vertex */
 static void test_bfs_same_vertex(void)
 {
-    graph_inst_t *g = graph_create();
+    graph_inst_t *g = graph_create(GRAPH_UNDIRECTED);
     CHECK(g != NULL);
 
     CHECK(add_vertex(g) == 0);
@@ -435,7 +435,7 @@ static void test_bfs_same_vertex(void)
 /* BFS: no connection between two components */
 static void test_bfs_unreachable(void)
 {
-    graph_inst_t *g = graph_create();
+    graph_inst_t *g = graph_create(GRAPH_UNDIRECTED);
     CHECK(g != NULL);
 
     for (int i = 0; i < 5; ++i)
@@ -461,7 +461,7 @@ static void test_bfs_unreachable(void)
 /* BFS: invalid vertex IDs and empty graph */
 static void test_bfs_invalid_vertices(void)
 {
-    graph_inst_t *g = graph_create();
+    graph_inst_t *g = graph_create(GRAPH_UNDIRECTED);
     CHECK(g != NULL);
 
     uint32_t *path = NULL;
@@ -502,7 +502,7 @@ static void test_bfs_invalid_vertices(void)
  */
 static void test_bfs_multiple_paths(void)
 {
-    graph_inst_t *g = graph_create();
+    graph_inst_t *g = graph_create(GRAPH_UNDIRECTED);
     CHECK(g != NULL);
 
     for (int i = 0; i < 6; ++i)
@@ -543,7 +543,7 @@ static void test_bfs_multiple_paths(void)
 
 static graph_inst_t *make_graph_checked(uint32_t count)
 {
-    graph_inst_t *graph = graph_create();
+    graph_inst_t *graph = graph_create(GRAPH_UNDIRECTED);
     CHECK(graph != NULL);
 
     for (uint32_t i = 0; i < count; ++i)

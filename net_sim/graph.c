@@ -10,10 +10,11 @@ typedef struct {
     uint32_t neighbours_cnt;
     uint32_t neighbours_cap;
 
-    uint32_t* neighbours;
+    graph_edge_t* neighbours;
 } vertex_t;
 
 struct graph_inst {
+    graph_type_t type;
     uint32_t vert_cnt;
     uint32_t vert_capacity;
 
@@ -23,7 +24,7 @@ struct graph_inst {
 static inline int _check_vertex_neighbour_slots(graph_inst_t *graph, uint32_t vertex_id){
 
     if (!graph->vertices[vertex_id].neighbours){
-        graph->vertices[vertex_id].neighbours = calloc(START_EDGES_CBT, sizeof(uint32_t));
+        graph->vertices[vertex_id].neighbours = calloc(START_EDGES_CBT, sizeof(*graph->vertices[vertex_id].neighbours));
         if (!graph->vertices[vertex_id].neighbours)
             return -3;
         graph->vertices[vertex_id].neighbours_cap = START_EDGES_CBT;
@@ -33,7 +34,7 @@ static inline int _check_vertex_neighbour_slots(graph_inst_t *graph, uint32_t ve
     if (graph->vertices[vertex_id].neighbours_cnt == graph->vertices[vertex_id].neighbours_cap){
         if (graph->vertices[vertex_id].neighbours_cap == UINT32_MAX) return GRAPH_ERROR_FULL;
         uint32_t size = graph->vertices[vertex_id].neighbours_cap < UINT32_MAX / 2 ? graph->vertices[vertex_id].neighbours_cap*2 : UINT32_MAX;
-        uint32_t *buff = realloc(graph->vertices[vertex_id].neighbours, size*sizeof(uint32_t));
+        graph_edge_t *buff = realloc(graph->vertices[vertex_id].neighbours, size*sizeof(*buff));
         if (!buff)
             return -3;
         graph->vertices[vertex_id].neighbours_cap = size;
@@ -45,7 +46,7 @@ static inline int _check_vertex_neighbour_slots(graph_inst_t *graph, uint32_t ve
 
 static inline bool _find_neighbour(const vertex_t *vertex, uint32_t neighbour_id){
     for (uint32_t i = 0; i < vertex->neighbours_cnt; ++i){
-        if (vertex->neighbours[i] == neighbour_id)
+        if (vertex->neighbours[i].vertex_id == neighbour_id)
             return true;
     }
     return false;
@@ -62,7 +63,7 @@ static inline bool _check_vertices_has_edge(graph_inst_t *graph, uint32_t vertex
     return false;
 }
 
-graph_inst_t* graph_create(void)
+graph_inst_t* graph_create(graph_type_t type)
 {
     graph_inst_t* instance = (graph_inst_t*)malloc(sizeof(graph_inst_t));
     if (!instance)
@@ -73,6 +74,7 @@ graph_inst_t* graph_create(void)
         free(instance);
         return NULL;
     }
+    instance->type = type;
     instance->vert_capacity = START_VERTICES_CNT;
     instance->vert_cnt = 0;
 
@@ -91,6 +93,16 @@ void graph_free(graph_inst_t* graph)
     free(graph->vertices);
     free(graph);
     
+}
+
+graph_status_t graph_get_type(graph_inst_t* graph, graph_type_t *type)
+{
+    if (!graph || !type)
+        return GRAPH_ERROR_BAD_ARG;
+
+    *type = graph->type;
+
+    return GRAPH_STATUS_OK;
 }
 
 graph_status_t graph_add_vertex(graph_inst_t *graph, uint32_t *vertex_id)
@@ -137,15 +149,50 @@ graph_status_t graph_add_edge(graph_inst_t *graph, uint32_t vertex_a_id, uint32_
         return GRAPH_ERROR_MEMALLOC_ERROR;
     
 
-    graph->vertices[vertex_a_id].neighbours[graph->vertices[vertex_a_id].neighbours_cnt++] = vertex_b_id;
-    graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++] = vertex_a_id;
+    graph->vertices[vertex_a_id].neighbours[graph->vertices[vertex_a_id].neighbours_cnt++].vertex_id = vertex_b_id;
+    graph->vertices[vertex_a_id].neighbours[graph->vertices[vertex_a_id].neighbours_cnt++].weight = 1;
+    if (graph->type == GRAPH_UNDIRECTED){
+        graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++].vertex_id = vertex_a_id;
+        graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++].weight = 1;
+    }
+
+
+    return GRAPH_STATUS_OK;
+} 
+
+graph_status_t graph_add_weighted_edge(graph_inst_t *graph, uint32_t vertex_a_id, uint32_t vertex_b_id, uint32_t weight)
+{
+    if (!graph)
+        return GRAPH_ERROR_BAD_ARG;
+
+    if (vertex_a_id == vertex_b_id)
+        return GRAPH_ERROR_LOOP;
+
+    if (vertex_a_id >= graph->vert_cnt 
+        || vertex_b_id >= graph->vert_cnt)
+        return GRAPH_ERROR_VERTEX_IS_NOT_EXIST;
+
+    if(_check_vertices_has_edge(graph, vertex_a_id, vertex_b_id))
+        return GRAPH_STATUS_OK;
+
+    if(_check_vertex_neighbour_slots(graph, vertex_a_id)
+        || _check_vertex_neighbour_slots(graph, vertex_b_id))
+        return GRAPH_ERROR_MEMALLOC_ERROR;
+    
+
+    graph->vertices[vertex_a_id].neighbours[graph->vertices[vertex_a_id].neighbours_cnt++].vertex_id = vertex_b_id;
+    graph->vertices[vertex_a_id].neighbours[graph->vertices[vertex_a_id].neighbours_cnt++].weight = weight;
+    if (graph->type == GRAPH_UNDIRECTED){
+        graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++].vertex_id = vertex_a_id;
+        graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++].weight = weight;
+    }
 
 
     return GRAPH_STATUS_OK;
 } 
 
 graph_status_t graph_get_neighbours(graph_inst_t *graph, uint32_t vertex_id, 
-                                    const uint32_t **neighbours_buf, uint32_t* neghbours_cnt)
+                                    const graph_edge_t **neighbours_buf, uint32_t* neghbours_cnt)
 {
     if (!graph || !neighbours_buf || !neghbours_cnt)
         return GRAPH_ERROR_BAD_ARG;

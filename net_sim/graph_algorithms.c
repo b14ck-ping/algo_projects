@@ -7,6 +7,7 @@
 #include <assert.h>
 
 #include "graph_algorithms.h"
+#include "graph.h"
 
 #define COMPONENT_UNVISITED UINT32_MAX
 #define WITHOUT_PARENT UINT32_MAX
@@ -109,7 +110,7 @@ ga_status_t ga_find_shortest_way(graph_inst_t *gi, uint32_t from, uint32_t to,
     while (!queue_is_empty(queue)){
         uint32_t cur_vertex = queue_dequeue(queue);
 
-        const uint32_t *neighbours = NULL;
+        const graph_edge_t *neighbours = NULL;
         uint32_t neghbours_cnt = 0;
         if (graph_get_neighbours(gi, cur_vertex, 
                         &neighbours, &neghbours_cnt) != GRAPH_STATUS_OK){
@@ -119,7 +120,7 @@ ga_status_t ga_find_shortest_way(graph_inst_t *gi, uint32_t from, uint32_t to,
             
 
         for (uint32_t i = 0; i < neghbours_cnt; ++i){
-            uint32_t neighbour = neighbours[i];
+            uint32_t neighbour = neighbours[i].vertex_id;
             if (visited[neighbour])
                 continue;
 
@@ -274,7 +275,7 @@ ga_status_t ga_find_components(graph_inst_t *graph, uint32_t **out_components, u
         while(!stack_is_empty(stk)){
             uint32_t cur_vertex = stack_pop(stk);
 
-            const uint32_t *neighbours = NULL;
+            const graph_edge_t *neighbours = NULL;
             uint32_t neghbours_cnt = 0;
             if (graph_get_neighbours(graph, cur_vertex, 
                             &neighbours, &neghbours_cnt) != GRAPH_STATUS_OK){
@@ -285,7 +286,7 @@ ga_status_t ga_find_components(graph_inst_t *graph, uint32_t **out_components, u
                 
 
             for (uint32_t j = 0; j < neghbours_cnt; ++j){
-                uint32_t neighbour = neighbours[j];
+                uint32_t neighbour = neighbours[j].vertex_id;
                 if (components[neighbour] != COMPONENT_UNVISITED)
                     continue;
 
@@ -316,6 +317,12 @@ ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle)
 
     *out_has_cycle = false;
 
+    graph_type_t type;
+    graph_get_type(graph, &type);
+
+    if (type != GRAPH_UNDIRECTED)
+        return GA_ERROR_UNSUPPORTED_GRAPH;
+
     uint32_t vertices_cnt = 0;
     if(graph_get_vertices_cnt(graph, &vertices_cnt))
         return GA_ERROR_BAD_GRAPH;
@@ -330,8 +337,6 @@ ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle)
     bool *visited = calloc(vertices_cnt, sizeof(*visited));
     if(!visited)
         return GA_ERROR_MEMALLOC;
-
-    memset(visited, 0x00, vertices_cnt*sizeof(*visited));
 
     uint32_t *parents = calloc(vertices_cnt, sizeof(*parents));
     if(!parents){
@@ -358,7 +363,7 @@ ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle)
         while(!stack_is_empty(stk)){
             uint32_t cur_vertex = stack_pop(stk);
 
-            const uint32_t *neighbours = NULL;
+            const graph_edge_t *neighbours = NULL;
             uint32_t neghbours_cnt = 0;
             if (graph_get_neighbours(graph, cur_vertex, 
                             &neighbours, &neghbours_cnt) != GRAPH_STATUS_OK){
@@ -368,7 +373,7 @@ ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle)
                 
 
             for (uint32_t j = 0; j < neghbours_cnt; ++j){
-                uint32_t neighbour = neighbours[j];
+                uint32_t neighbour = neighbours[j].vertex_id;
                 if (visited[neighbour] && parents[cur_vertex] != neighbour){
                     out = true;
                     goto free_exit;
