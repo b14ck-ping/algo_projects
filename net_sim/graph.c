@@ -53,8 +53,11 @@ static inline bool _find_neighbour(const vertex_t *vertex, uint32_t neighbour_id
 }
 
 static inline bool _check_vertices_has_edge(graph_inst_t *graph, uint32_t vertex_a_id, uint32_t vertex_b_id){
-    if (!graph->vertices[vertex_a_id].neighbours_cnt ||
-        !graph->vertices[vertex_b_id].neighbours_cnt)
+    if (graph->type == GRAPH_UNDIRECTED && (!graph->vertices[vertex_a_id].neighbours_cnt ||
+        !graph->vertices[vertex_b_id].neighbours_cnt))
+            return false;
+
+    if (graph->type == GRAPH_DIRECTED && !graph->vertices[vertex_a_id].neighbours_cnt)
             return false;
 
     if (_find_neighbour(&graph->vertices[vertex_a_id], vertex_b_id))
@@ -131,33 +134,7 @@ graph_status_t graph_add_vertex(graph_inst_t *graph, uint32_t *vertex_id)
 
 graph_status_t graph_add_edge(graph_inst_t *graph, uint32_t vertex_a_id, uint32_t vertex_b_id)
 {
-    if (!graph)
-        return GRAPH_ERROR_BAD_ARG;
-
-    if (vertex_a_id == vertex_b_id)
-        return GRAPH_ERROR_LOOP;
-
-    if (vertex_a_id >= graph->vert_cnt 
-        || vertex_b_id >= graph->vert_cnt)
-        return GRAPH_ERROR_VERTEX_IS_NOT_EXIST;
-
-    if(_check_vertices_has_edge(graph, vertex_a_id, vertex_b_id))
-        return GRAPH_STATUS_OK;
-
-    if(_check_vertex_neighbour_slots(graph, vertex_a_id)
-        || _check_vertex_neighbour_slots(graph, vertex_b_id))
-        return GRAPH_ERROR_MEMALLOC_ERROR;
-    
-
-    graph->vertices[vertex_a_id].neighbours[graph->vertices[vertex_a_id].neighbours_cnt++].vertex_id = vertex_b_id;
-    graph->vertices[vertex_a_id].neighbours[graph->vertices[vertex_a_id].neighbours_cnt++].weight = 1;
-    if (graph->type == GRAPH_UNDIRECTED){
-        graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++].vertex_id = vertex_a_id;
-        graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++].weight = 1;
-    }
-
-
-    return GRAPH_STATUS_OK;
+    return graph_add_weighted_edge(graph, vertex_a_id, vertex_b_id, 1);
 } 
 
 graph_status_t graph_add_weighted_edge(graph_inst_t *graph, uint32_t vertex_a_id, uint32_t vertex_b_id, uint32_t weight)
@@ -180,11 +157,9 @@ graph_status_t graph_add_weighted_edge(graph_inst_t *graph, uint32_t vertex_a_id
         return GRAPH_ERROR_MEMALLOC_ERROR;
     
 
-    graph->vertices[vertex_a_id].neighbours[graph->vertices[vertex_a_id].neighbours_cnt++].vertex_id = vertex_b_id;
-    graph->vertices[vertex_a_id].neighbours[graph->vertices[vertex_a_id].neighbours_cnt++].weight = weight;
+    graph->vertices[vertex_a_id].neighbours[graph->vertices[vertex_a_id].neighbours_cnt++] = (graph_edge_t){ .vertex_id = vertex_b_id, .weight = weight};
     if (graph->type == GRAPH_UNDIRECTED){
-        graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++].vertex_id = vertex_a_id;
-        graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++].weight = weight;
+        graph->vertices[vertex_b_id].neighbours[graph->vertices[vertex_b_id].neighbours_cnt++] = (graph_edge_t){ .vertex_id = vertex_b_id, .weight = weight};
     }
 
 
