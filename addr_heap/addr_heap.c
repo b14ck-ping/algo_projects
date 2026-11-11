@@ -2,7 +2,7 @@
 #include "addr_heap.h"
 #include <stddef.h>
 #include <stdio.h>
-#include <stdint.h>
+
 
 #define MIN_count 20
 
@@ -12,7 +12,7 @@ typedef enum {
 } handle_state_t;
 
 typedef struct addr_heap_node{
-    int prior;
+    uint64_t prior;
     size_t sequence;
     addr_heap_handle_t *handle;
 
@@ -26,6 +26,7 @@ struct addr_heap_handle {
 };
 
 struct addr_heap_inst {
+    heap_type_t type;
     size_t capacity;
     size_t count;
     size_t next_seq;
@@ -44,14 +45,19 @@ static inline size_t _right_child(size_t i)
     return 2 * i + 2;
 }
 
-static inline int _compare_priorities(addr_heap_node_t *x, addr_heap_node_t *y)
+static inline int _compare_priorities(addr_heap_node_t *x, addr_heap_node_t *y, heap_type_t type)
 {
-    if(x->prior > y->prior)
-        return 1 ;
-    else if (x->prior < y->prior)
-        return -1;
-    else 
-        return x->sequence < y->sequence ? 1 : x->sequence > y->sequence ? -1 : 0;
+    if (x->prior != y->prior){
+        if (type == HEAP_MIN)
+            return x->prior < y->prior ? 1 : -1;
+
+        return x->prior > y->prior ? 1 : -1;
+    }
+
+    if(x->sequence != y->sequence)
+        return x->sequence < y->sequence ? 1 : -1;
+
+    return 0;
 }
 
 static inline size_t _parent(size_t i)
@@ -74,7 +80,7 @@ static void shift_up(addr_heap_inst_t *heap, size_t item_ind)
 
     while (item_ind != 0 ){
         size_t parent = _parent(item_ind);
-        if (_compare_priorities(&heap->arr[item_ind], &heap->arr[parent]) == 1 ){
+        if (_compare_priorities(&heap->arr[item_ind], &heap->arr[parent], heap->type) == 1 ){
             _swap(heap, item_ind, parent);
             item_ind = parent;
         } else {
@@ -93,21 +99,21 @@ static void shift_down(addr_heap_inst_t *heap, size_t item_ind)
     size_t right_child = _right_child(item_ind);
     while (item_ind < heap->count && (left_child < heap->count || right_child < heap->count)){
         if (left_child < heap->count && right_child < heap->count){
-            int ret = _compare_priorities(&heap->arr[right_child], &heap->arr[left_child]);
+            int ret = _compare_priorities(&heap->arr[right_child], &heap->arr[left_child],heap->type);
             if (ret == 1 ){
-                if (_compare_priorities(&heap->arr[item_ind], &heap->arr[right_child]) == -1 ){
+                if (_compare_priorities(&heap->arr[item_ind], &heap->arr[right_child],heap->type) == -1 ){
                     _swap(heap, item_ind, right_child);
                     item_ind = right_child;
-                } else if (_compare_priorities(&heap->arr[item_ind], &heap->arr[left_child]) == -1 ){
+                } else if (_compare_priorities(&heap->arr[item_ind], &heap->arr[left_child],heap->type) == -1 ){
                     _swap(heap, item_ind, left_child);
                     item_ind = left_child;
                 } else 
                     return;
             } else if (ret == -1) {
-                if (_compare_priorities(&heap->arr[item_ind], &heap->arr[left_child]) == -1 ){
+                if (_compare_priorities(&heap->arr[item_ind], &heap->arr[left_child],heap->type) == -1 ){
                     _swap(heap, item_ind, left_child);
                     item_ind = left_child;
-                } else if (_compare_priorities(&heap->arr[item_ind], &heap->arr[right_child]) == -1 ){
+                } else if (_compare_priorities(&heap->arr[item_ind], &heap->arr[right_child],heap->type) == -1 ){
                     _swap(heap, item_ind, right_child);
                     item_ind = right_child;
                 } else 
@@ -116,7 +122,7 @@ static void shift_down(addr_heap_inst_t *heap, size_t item_ind)
                 return;
             }
         }  else if (left_child < heap->count) {
-            if (_compare_priorities(&heap->arr[item_ind], &heap->arr[left_child]) == -1 ){
+            if (_compare_priorities(&heap->arr[item_ind], &heap->arr[left_child],heap->type) == -1 ){
                 _swap(heap, item_ind, left_child);
                 item_ind = left_child;
             } else {
@@ -154,7 +160,7 @@ static inline void _invalidate_handle(addr_heap_handle_t* handle)
     handle->state = HANDLE_INVALID;
 }
 
-addr_heap_inst_t* addr_heap_allocate(void)
+addr_heap_inst_t* addr_heap_allocate(heap_type_t type)
 {
     addr_heap_inst_t *buf = (addr_heap_inst_t *)calloc(1, sizeof(addr_heap_inst_t));
     if (!buf)
@@ -166,7 +172,7 @@ addr_heap_inst_t* addr_heap_allocate(void)
         return NULL;
     }
         
-
+    buf->type = type;
     buf->capacity = MIN_count;
 
     return buf;
@@ -186,7 +192,7 @@ void addr_heap_deallocate(addr_heap_inst_t *heap)
     free(heap);
 }
 
-int addr_heap_add_item(addr_heap_inst_t *heap, void* data, int priority, addr_heap_handle_t** out)
+int addr_heap_add_item(addr_heap_inst_t *heap, void* data, uint64_t priority, addr_heap_handle_t** out)
 {
     if (!heap || !heap->arr || !out)
         return -1;
@@ -271,12 +277,12 @@ void addr_heap_dump_heap(addr_heap_inst_t *heap){
 
     if (!heap->count) return;
     if (heap->count == 1){
-        printf("[p: %d id: %zu]\n", heap->arr[0].prior, heap->arr[0].sequence);
+        printf("[p: %lu id: %zu]\n", heap->arr[0].prior, heap->arr[0].sequence);
         return;
     }
     for (size_t i = 0; i < heap->count; i = i*2 + 1){
         for (size_t j = i; j <= i*2 && j < heap->count; ++j){
-            printf("[p: %d id: %zu] ", heap->arr[j].prior, heap->arr[j].sequence);
+            printf("[p: %lu id: %zu] ", heap->arr[j].prior, heap->arr[j].sequence);
         }
         printf("\n");
     }
@@ -288,21 +294,21 @@ static void shift_specific_item(addr_heap_inst_t *heap, size_t idx)
 
     size_t left_child = _left_child(idx);
     size_t right_child = _right_child(idx);
-    if (idx == 0 || (left_child < heap->count && _compare_priorities(&heap->arr[idx], &heap->arr[left_child]) == -1) ||
-        (right_child < heap->count && _compare_priorities(&heap->arr[idx], &heap->arr[right_child]) == -1)){
+    if (idx == 0 || (left_child < heap->count && _compare_priorities(&heap->arr[idx], &heap->arr[left_child],heap->type) == -1) ||
+        (right_child < heap->count && _compare_priorities(&heap->arr[idx], &heap->arr[right_child],heap->type) == -1)){
         
         shift_down(heap, idx);
         return;
     }
         
     size_t parent = _parent(idx);
-    int ret = _compare_priorities(&heap->arr[idx], &heap->arr[parent]);
+    int ret = _compare_priorities(&heap->arr[idx], &heap->arr[parent],heap->type);
     if (ret == 1){
         shift_up(heap, idx);
     }
 } 
 
-int addr_heap_set_priority(addr_heap_inst_t *heap, int priority, addr_heap_handle_t* handle)
+int addr_heap_set_priority(addr_heap_inst_t *heap, uint64_t priority, addr_heap_handle_t* handle)
 {
     if (!heap || !handle)
         return -1;

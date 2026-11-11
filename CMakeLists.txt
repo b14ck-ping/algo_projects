@@ -9,7 +9,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(ENABLE_SANITIZERS
     "Enable AddressSanitizer and UBSan"
-    OFF
+    ON
 )
 
 option(ENABLE_WARNINGS
