@@ -30,4 +30,8 @@ ga_status_t ga_find_components(graph_inst_t *graph, uint32_t **out_components,
 
 ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle);
 
+ga_status_t ga_dijkstra(graph_inst_t *graph, uint32_t from,
+                        uint32_t to, uint32_t **out_path,
+                        size_t *out_length, uint64_t *out_total_weight);
+
 #endif // GRAPH_ALGORITHMS_H

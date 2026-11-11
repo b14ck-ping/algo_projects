@@ -396,3 +396,14 @@ free_exit:
     *out_has_cycle = out;
     return ret_val;
 }
+
+
+// ga_status_t ga_dijkstra(graph_inst_t *graph, uint32_t from,
+//                         uint32_t to, uint32_t **out_path,
+//                         size_t *out_length, uint64_t *out_total_weight)
+// {
+
+
+
+    
+// }
