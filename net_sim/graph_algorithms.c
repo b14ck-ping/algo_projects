@@ -470,7 +470,7 @@ ga_status_t ga_dijkstra(graph_inst_t *graph, uint32_t from,
     }
 
     uint32_t *vertex_ids = malloc(vertices_cnt*sizeof(*vertex_ids));
-    if (!heap){
+    if (!vertex_ids){
         free(dist);
         free(parent);
         free(settled);
@@ -524,9 +524,15 @@ ga_status_t ga_dijkstra(graph_inst_t *graph, uint32_t from,
                 parent[neighbour] = curr_vtx;
 
                 if (handles[neighbour]){
-                    assert(addr_heap_set_priority(heap, weight, handles[neighbour]) == 0);
+                    int status = addr_heap_set_priority(
+                        heap, new_dist, handles[neighbour]);
+
+                    if (status != 0) {
+                        ret_val = GA_ERROR_BAD_GRAPH;
+                        goto free_exit;
+                    }
                 } else {
-                    if (addr_heap_add_item(heap, &vertex_ids[neighbour], weight, &handles[neighbour])){
+                    if (addr_heap_add_item(heap, &vertex_ids[neighbour], new_dist, &handles[neighbour])){
                         ret_val = GA_ERROR_MEMALLOC;
                         goto free_exit;
                     }
@@ -582,11 +588,11 @@ free_exit:
     free(dist);
     free(parent);
     free(settled);
+    addr_heap_deallocate(heap);
     for (uint32_t i = 0; i < vertices_cnt; i++){
         addr_heap_free_handler(handles[i]);
     }
     free(handles);   
-    addr_heap_deallocate(heap);
     free(vertex_ids);
 
     return ret_val;

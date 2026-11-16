@@ -1380,6 +1380,31 @@ static void test_dijkstra_invalid_args(void)
     graph_free(g);
 }
 
+
+static void test_dijkstra_cumulative_priority(void)
+{
+    const dijkstra_test_edge_t edges[] = {
+        {0, 1, 6},
+        {0, 2, 5},
+        {2, 3, 5},
+        {3, 4, 1},
+        {1, 4, 2}
+    };
+
+    const uint32_t expected[] = {0, 1, 4};
+
+    graph_inst_t *g = dijkstra_make_graph(
+        GRAPH_DIRECTED, 5,
+        edges, DIJKSTRA_COUNT(edges));
+
+    dijkstra_expect_path(
+        g, 0, 4, 8,
+        expected, DIJKSTRA_COUNT(expected));
+
+    graph_free(g);
+}
+
+
 static void run_dijkstra_tests(void)
 {
     RUN_TEST(test_dijkstra_decrease_key);
@@ -1394,6 +1419,7 @@ static void run_dijkstra_tests(void)
     RUN_TEST(test_dijkstra_early_exit);
     RUN_TEST(test_dijkstra_long_chain);
     RUN_TEST(test_dijkstra_invalid_args);
+    RUN_TEST(test_dijkstra_cumulative_priority);
     puts("All Dijkstra tests passed!");
 }
 
