@@ -419,9 +419,6 @@ ga_status_t ga_dijkstra(graph_inst_t *graph, uint32_t from,
     if(to >= vertices_cnt || from >= vertices_cnt)
         return GA_ERROR_VERTEX_IS_NOT_EXIST;
 
-    if(!vertices_cnt)
-        return GA_STATUS_OK;
-
     if (from == to){
         uint32_t *out = calloc(1, sizeof(uint32_t));
         if (!out){

@@ -350,13 +350,13 @@ static void test_large_graph(void)
 static graph_inst_t *create_graph(uint32_t count)
 {
     graph_inst_t *g = graph_create(GRAPH_UNDIRECTED);
-    assert(g);
+    CHECK(g);
 
     for (uint32_t i = 0; i < count; ++i) {
         uint32_t id = UINT32_MAX;
 
-        assert(graph_add_vertex(g, &id) == GRAPH_STATUS_OK);
-        assert(id == i);
+        CHECK(graph_add_vertex(g, &id) == GRAPH_STATUS_OK);
+        CHECK(id == i);
     }
 
     return g;
@@ -364,7 +364,7 @@ static graph_inst_t *create_graph(uint32_t count)
 
 static void add_edge(graph_inst_t *g, uint32_t a, uint32_t b)
 {
-    assert(graph_add_edge(g, a, b) == GRAPH_STATUS_OK);
+    CHECK(graph_add_edge(g, a, b) == GRAPH_STATUS_OK);
 }
 
 /*
@@ -385,16 +385,16 @@ static void test_bfs_simple(void)
     uint32_t *path = NULL;
     size_t length = 0;
 
-    assert(ga_find_shortest_way(
+    CHECK(ga_find_shortest_way(
         g, 0, 3, &path, &length) == GA_STATUS_OK);
 
-    assert(path != NULL);
-    assert(length == 4);
+    CHECK(path != NULL);
+    CHECK(length == 4);
 
     const uint32_t expected[] = {0, 1, 2, 3};
 
     for (size_t i = 0; i < length; ++i)
-        assert(path[i] == expected[i]);
+        CHECK(path[i] == expected[i]);
 
     free(path);
     graph_free(g);
@@ -430,16 +430,16 @@ static void test_bfs_shortest(void)
     uint32_t *path = NULL;
     size_t length = 0;
 
-    assert(ga_find_shortest_way(
+    CHECK(ga_find_shortest_way(
         g, 0, 3, &path, &length) == GA_STATUS_OK);
 
-    assert(path != NULL);
-    assert(length == 3);
+    CHECK(path != NULL);
+    CHECK(length == 3);
 
     const uint32_t expected[] = {0, 4, 3};
 
     for (size_t i = 0; i < length; ++i)
-        assert(path[i] == expected[i]);
+        CHECK(path[i] == expected[i]);
 
     free(path);
     graph_free(g);
