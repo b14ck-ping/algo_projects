@@ -8,6 +8,8 @@
 
 #include "graph_algorithms.h"
 #include "graph.h"
+#include "addr_heap.h"
+
 
 #define COMPONENT_UNVISITED UINT32_MAX
 #define WITHOUT_PARENT UINT32_MAX
@@ -398,12 +400,194 @@ free_exit:
 }
 
 
-// ga_status_t ga_dijkstra(graph_inst_t *graph, uint32_t from,
-//                         uint32_t to, uint32_t **out_path,
-//                         size_t *out_length, uint64_t *out_total_weight)
-// {
+ga_status_t ga_dijkstra(graph_inst_t *graph, uint32_t from,
+                        uint32_t to, uint32_t **out_path,
+                        size_t *out_length, uint64_t *out_total_weight)
+{
+    ga_status_t ret_val = GA_STATUS_OK;
+    if (!graph || !out_path || !out_length || !out_total_weight)
+        return GA_ERROR_BAD_ARG;
 
+    *out_path = NULL;
+    *out_length = 0;
+    *out_total_weight = 0;
 
+    uint32_t vertices_cnt = 0;
+    if(graph_get_vertices_cnt(graph, &vertices_cnt))
+        return GA_ERROR_BAD_GRAPH;
 
+    if(to >= vertices_cnt || from >= vertices_cnt)
+        return GA_ERROR_VERTEX_IS_NOT_EXIST;
+
+    if(!vertices_cnt)
+        return GA_STATUS_OK;
+
+    if (from == to){
+        uint32_t *out = calloc(1, sizeof(uint32_t));
+        if (!out){
+            return GA_ERROR_MEMALLOC;
+        }
+        out[0] = from;
+        *out_path = out;
+        *out_length = 1;
+        return ret_val;
+    }
+
+    uint64_t *dist = malloc(vertices_cnt*sizeof(*dist));
+    if (!dist)
+        return GA_ERROR_MEMALLOC;
+
+    memset(dist, 0xFF, vertices_cnt*sizeof(*dist));
+
+    uint32_t *parent = calloc(vertices_cnt, sizeof(*parent));
+    if (!parent){
+        free(dist);
+        return GA_ERROR_MEMALLOC;
+    }
+        
+    bool *settled = calloc(vertices_cnt, sizeof(*settled));
+    if (!settled){
+        free(dist);
+        free(parent);
+        return GA_ERROR_MEMALLOC;
+    }
+
+    addr_heap_handle_t **handles = calloc(vertices_cnt, sizeof(*handles));
+    if (!handles){
+        free(dist);
+        free(parent);
+        free(settled);
+        return GA_ERROR_MEMALLOC;
+    }
+        
+    addr_heap_inst_t *heap = addr_heap_allocate(HEAP_MIN);
+    if (!heap){
+        free(dist);
+        free(parent);
+        free(settled);
+        free(handles);
+        return GA_ERROR_MEMALLOC;
+    }
+
+    uint32_t *vertex_ids = malloc(vertices_cnt*sizeof(*vertex_ids));
+    if (!heap){
+        free(dist);
+        free(parent);
+        free(settled);
+        free(handles);
+        addr_heap_deallocate(heap);
+        return GA_ERROR_MEMALLOC;
+    }
+    for (uint32_t i = 0; i < vertices_cnt; i++){
+        vertex_ids[i]= i;
+    }
+
+    int stat = addr_heap_add_item(heap, &vertex_ids[from], 0, &handles[from]);
+    if(stat){
+        assert(stat != -1);
+        ret_val = GA_ERROR_MEMALLOC;
+        goto free_exit;
+    }
+    dist[from] = 0;
+        
+
+    addr_heap_item_t out = {0};
+    while(!addr_heap_pop(heap, &out)){
+        uint32_t curr_vtx = *(uint32_t*)out.data;
+
+        settled[curr_vtx] = true;
+        addr_heap_free_handler(handles[curr_vtx]);
+        handles[curr_vtx] = NULL;
+
+        if (curr_vtx == to)
+            goto check_path;
+
+        const graph_edge_t *neighbours = NULL;
+        uint32_t neghbours_cnt = 0;
+        if (graph_get_neighbours(graph, curr_vtx, 
+                        &neighbours, &neghbours_cnt) != GRAPH_STATUS_OK){
+            ret_val = GA_ERROR_BAD_GRAPH;
+            goto free_exit;
+        }
+            
+
+        for (uint32_t j = 0; j < neghbours_cnt; ++j){
+            uint32_t neighbour = neighbours[j].vertex_id;
+            uint64_t weight = neighbours[j].weight;
+            if (settled[neighbour])
+                continue;
+
+            uint64_t new_dist = dist[curr_vtx] + weight;
+
+            if (new_dist < dist[neighbour]){
+                dist[neighbour] = new_dist;
+                parent[neighbour] = curr_vtx;
+
+                if (handles[neighbour]){
+                    assert(addr_heap_set_priority(heap, weight, handles[neighbour]) == 0);
+                } else {
+                    if (addr_heap_add_item(heap, &vertex_ids[neighbour], weight, &handles[neighbour])){
+                        ret_val = GA_ERROR_MEMALLOC;
+                        goto free_exit;
+                    }
+                }
+            }
+        }
+    }
+
+check_path:
+    if (!settled[to]){
+        ret_val = GA_ERROR_CANT_FIND_PATH;
+        goto free_exit;
+    }
+
+    uint32_t *bout_path = calloc(vertices_cnt, sizeof(*bout_path));
+    if (!bout_path){
+        ret_val = GA_ERROR_MEMALLOC;
+        goto free_exit;
+    }
+
+    uint32_t out_size = vertices_cnt;
+    uint32_t cur_vert = to;
+    uint32_t idx = 0;
+    while (cur_vert != from) {
+        bout_path[idx++] = cur_vert;
+        cur_vert = parent[cur_vert];
+        assert(settled[cur_vert] == true);
+    }
+    bout_path[idx++] = cur_vert;
+
+    if (idx < out_size){
+        uint32_t *out_b = realloc(bout_path, idx*sizeof(uint32_t));
+        if (out_b){
+            bout_path = out_b;
+            out_size = idx;
+        }   
+    }
     
-// }
+
+    // reverse
+    for (uint32_t i = 0; i < idx / 2; ++i){
+        uint32_t tmp = bout_path[i];
+        bout_path[i] = bout_path[idx - i - 1];
+        bout_path[idx - i - 1] = tmp;
+    }
+
+    *out_path = bout_path;
+    *out_length = idx; 
+    *out_total_weight = dist[to];   
+
+
+free_exit:
+    free(dist);
+    free(parent);
+    free(settled);
+    for (uint32_t i = 0; i < vertices_cnt; i++){
+        addr_heap_free_handler(handles[i]);
+    }
+    free(handles);   
+    addr_heap_deallocate(heap);
+    free(vertex_ids);
+
+    return ret_val;
+}

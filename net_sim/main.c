@@ -1118,6 +1118,285 @@ static void test_weighted_graph_api(void)
     graph_free(g);
 }
 
+/* Paste before main() in net_sim/main.c. Uses its existing CHECK and RUN_TEST. */
+
+typedef struct {
+    uint32_t from;
+    uint32_t to;
+    uint32_t weight;
+} dijkstra_test_edge_t;
+
+#define DIJKSTRA_COUNT(a) (sizeof(a) / sizeof((a)[0]))
+
+static graph_inst_t *dijkstra_make_graph(graph_type_t type,
+                                         uint32_t vertices,
+                                         const dijkstra_test_edge_t *edges,
+                                         size_t edge_count)
+{
+    graph_inst_t *g = graph_create(type);
+    CHECK(g != NULL);
+
+    for (uint32_t i = 0; i < vertices; ++i)
+        CHECK(add_vertex(g) == i);
+
+    for (size_t i = 0; i < edge_count; ++i)
+        CHECK(graph_add_weighted_edge(g, edges[i].from,
+                                      edges[i].to, edges[i].weight)
+              == GRAPH_STATUS_OK);
+    return g;
+}
+
+static void dijkstra_expect_path(graph_inst_t *g,
+                                 uint32_t from, uint32_t to,
+                                 uint64_t expected_weight,
+                                 const uint32_t *expected_path,
+                                 size_t expected_length)
+{
+    uint32_t *path = NULL;
+    size_t length = 0;
+    uint64_t weight = 0;
+
+    CHECK(ga_dijkstra(g, from, to, &path, &length, &weight)
+          == GA_STATUS_OK);
+    CHECK(path != NULL);
+    CHECK(length > 0);
+    CHECK(path[0] == from);
+    CHECK(path[length - 1] == to);
+    CHECK(weight == expected_weight);
+
+    uint32_t vertex_count = 0;
+    CHECK(graph_get_vertices_cnt(g, &vertex_count) == GRAPH_STATUS_OK);
+    CHECK(length <= vertex_count); // Shortest path can be simple.
+
+    if (expected_path != NULL) {
+        CHECK(length == expected_length);
+        for (size_t i = 0; i < length; ++i)
+            CHECK(path[i] == expected_path[i]);
+    }
+
+    uint64_t calculated_weight = 0;
+    for (size_t i = 0; i + 1 < length; ++i) {
+        const graph_edge_t *neighbors = NULL;
+        uint32_t count = 0;
+        bool found = false;
+
+        CHECK(graph_get_neighbours(g, path[i], &neighbors, &count)
+              == GRAPH_STATUS_OK);
+        for (uint32_t j = 0; j < count; ++j) {
+            if (neighbors[j].vertex_id != path[i + 1])
+                continue;
+
+            CHECK(!found); // No duplicate edges in our graph API.
+            CHECK(calculated_weight <= UINT64_MAX - neighbors[j].weight);
+            calculated_weight += neighbors[j].weight;
+            found = true;
+        }
+        CHECK(found);
+    }
+    CHECK(calculated_weight == weight);
+    free(path);
+}
+
+static void dijkstra_expect_no_path(graph_inst_t *g,
+                                    uint32_t from, uint32_t to)
+{
+    uint32_t sentinel = 123;
+    uint32_t *path = &sentinel;
+    size_t length = 777;
+    uint64_t weight = 777;
+
+    CHECK(ga_dijkstra(g, from, to, &path, &length, &weight)
+          == GA_ERROR_CANT_FIND_PATH);
+    CHECK(path == NULL);
+    CHECK(length == 0);
+    CHECK(weight == 0);
+}
+
+static void test_dijkstra_decrease_key(void)
+{
+    const dijkstra_test_edge_t edges[] = {
+        {0, 1, 10}, {0, 2, 2}, {2, 1, 3},
+        {1, 3, 1},  {2, 3, 9}
+    };
+    const uint32_t expected[] = {0, 2, 1, 3};
+    graph_inst_t *g = dijkstra_make_graph(GRAPH_UNDIRECTED, 4,
+                                          edges, DIJKSTRA_COUNT(edges));
+    dijkstra_expect_path(g, 0, 3, 6, expected, DIJKSTRA_COUNT(expected));
+    graph_free(g);
+}
+
+static void test_dijkstra_more_edges_but_cheaper(void)
+{
+    const dijkstra_test_edge_t edges[] = {
+        {0, 3, 100}, {0, 1, 3}, {1, 2, 4}, {2, 3, 5}
+    };
+    const uint32_t expected[] = {0, 1, 2, 3};
+    graph_inst_t *g = dijkstra_make_graph(GRAPH_DIRECTED, 4,
+                                          edges, DIJKSTRA_COUNT(edges));
+    dijkstra_expect_path(g, 0, 3, 12, expected, DIJKSTRA_COUNT(expected));
+    graph_free(g);
+}
+
+static void test_dijkstra_directed(void)
+{
+    const dijkstra_test_edge_t edges[] = {
+        {0, 1, 5}, {1, 2, 1}, {0, 2, 30}, {2, 3, 7}
+    };
+    const uint32_t expected[] = {0, 1, 2, 3};
+    graph_inst_t *g = dijkstra_make_graph(GRAPH_DIRECTED, 4,
+                                          edges, DIJKSTRA_COUNT(edges));
+    dijkstra_expect_path(g, 0, 3, 13, expected, DIJKSTRA_COUNT(expected));
+    dijkstra_expect_no_path(g, 3, 0);
+    graph_free(g);
+}
+
+static void test_dijkstra_undirected_reverse(void)
+{
+    const dijkstra_test_edge_t edges[] = {{0, 1, 3}, {1, 2, 5}};
+    const uint32_t expected[] = {2, 1, 0};
+    graph_inst_t *g = dijkstra_make_graph(GRAPH_UNDIRECTED, 3,
+                                          edges, DIJKSTRA_COUNT(edges));
+    dijkstra_expect_path(g, 2, 0, 8, expected, DIJKSTRA_COUNT(expected));
+    graph_free(g);
+}
+
+static void test_dijkstra_zero_weight(void)
+{
+    const dijkstra_test_edge_t edges[] = {
+        {0, 2, 10}, {0, 1, 0}, {1, 2, 0}
+    };
+    const uint32_t expected[] = {0, 1, 2};
+    graph_inst_t *g = dijkstra_make_graph(GRAPH_DIRECTED, 3,
+                                          edges, DIJKSTRA_COUNT(edges));
+    dijkstra_expect_path(g, 0, 2, 0, expected, DIJKSTRA_COUNT(expected));
+    graph_free(g);
+}
+
+static void test_dijkstra_equal_paths(void)
+{
+    const dijkstra_test_edge_t edges[] = {
+        {0, 1, 2}, {0, 2, 2}, {1, 3, 2},
+        {2, 3, 2}, {0, 3, 50}
+    };
+    graph_inst_t *g = dijkstra_make_graph(GRAPH_DIRECTED, 4,
+                                          edges, DIJKSTRA_COUNT(edges));
+    // Either 0->1->3 or 0->2->3 is correct.
+    dijkstra_expect_path(g, 0, 3, 4, NULL, 0);
+    graph_free(g);
+}
+
+static void test_dijkstra_uint64_distance(void)
+{
+    const dijkstra_test_edge_t edges[] = {
+        {0, 1, UINT32_MAX}, {1, 2, UINT32_MAX},
+        {2, 3, UINT32_MAX}
+    };
+    const uint32_t expected[] = {0, 1, 2, 3};
+    graph_inst_t *g = dijkstra_make_graph(GRAPH_DIRECTED, 4,
+                                          edges, DIJKSTRA_COUNT(edges));
+    dijkstra_expect_path(g, 0, 3, (uint64_t)UINT32_MAX * 3,
+                         expected, DIJKSTRA_COUNT(expected));
+    graph_free(g);
+}
+
+static void test_dijkstra_same_vertex(void)
+{
+    graph_inst_t *g = dijkstra_make_graph(GRAPH_UNDIRECTED, 3, NULL, 0);
+    const uint32_t expected[] = {2};
+    dijkstra_expect_path(g, 2, 2, 0, expected, DIJKSTRA_COUNT(expected));
+    graph_free(g);
+}
+
+static void test_dijkstra_unreachable(void)
+{
+    const dijkstra_test_edge_t edges[] = {{0, 1, 7}, {2, 3, 9}};
+    graph_inst_t *g = dijkstra_make_graph(GRAPH_UNDIRECTED, 5,
+                                          edges, DIJKSTRA_COUNT(edges));
+    dijkstra_expect_no_path(g, 0, 3);
+    dijkstra_expect_no_path(g, 0, 4);
+    graph_free(g);
+}
+
+static void test_dijkstra_early_exit(void)
+{
+    graph_inst_t *g = dijkstra_make_graph(GRAPH_DIRECTED, 100, NULL, 0);
+    CHECK(graph_add_weighted_edge(g, 0, 1, 1) == GRAPH_STATUS_OK);
+    for (uint32_t i = 2; i < 100; ++i)
+        CHECK(graph_add_weighted_edge(g, 0, i, 100 + i)
+              == GRAPH_STATUS_OK);
+
+    // On extracting node 1, other heap handles still exist.
+    const uint32_t expected[] = {0, 1};
+    dijkstra_expect_path(g, 0, 1, 1, expected, DIJKSTRA_COUNT(expected));
+    graph_free(g);
+}
+
+static void test_dijkstra_long_chain(void)
+{
+    enum { N = 128 };
+    graph_inst_t *g = dijkstra_make_graph(GRAPH_DIRECTED, N, NULL, 0);
+    uint32_t expected[N];
+    uint64_t total = 0;
+
+    for (uint32_t i = 0; i < N; ++i)
+        expected[i] = i;
+    for (uint32_t i = 0; i + 1 < N; ++i) {
+        uint32_t w = (i % 7) + 1;
+        CHECK(graph_add_weighted_edge(g, i, i + 1, w) == GRAPH_STATUS_OK);
+        total += w;
+    }
+    dijkstra_expect_path(g, 0, N - 1, total, expected, N);
+    graph_free(g);
+}
+
+static void test_dijkstra_invalid_args(void)
+{
+    graph_inst_t *g = dijkstra_make_graph(GRAPH_DIRECTED, 2, NULL, 0);
+    uint32_t sentinel = 777;
+    uint32_t *path = &sentinel;
+    size_t length = 777;
+    uint64_t cost = 777;
+
+    CHECK(ga_dijkstra(NULL, 0, 1, &path, &length, &cost)
+          == GA_ERROR_BAD_ARG);
+    CHECK(ga_dijkstra(g, 0, 1, NULL, &length, &cost)
+          == GA_ERROR_BAD_ARG);
+    CHECK(ga_dijkstra(g, 0, 1, &path, NULL, &cost)
+          == GA_ERROR_BAD_ARG);
+    CHECK(ga_dijkstra(g, 0, 1, &path, &length, NULL)
+          == GA_ERROR_BAD_ARG);
+
+    CHECK(ga_dijkstra(g, 0, 2, &path, &length, &cost)
+          == GA_ERROR_VERTEX_IS_NOT_EXIST);
+    CHECK(path == NULL);
+    CHECK(length == 0);
+    CHECK(cost == 0);
+
+    graph_free(g);
+
+    g = dijkstra_make_graph(GRAPH_DIRECTED, 0, NULL, 0);
+    CHECK(ga_dijkstra(g, 0, 0, &path, &length, &cost)
+          == GA_ERROR_VERTEX_IS_NOT_EXIST);
+    graph_free(g);
+}
+
+static void run_dijkstra_tests(void)
+{
+    RUN_TEST(test_dijkstra_decrease_key);
+    RUN_TEST(test_dijkstra_more_edges_but_cheaper);
+    RUN_TEST(test_dijkstra_directed);
+    RUN_TEST(test_dijkstra_undirected_reverse);
+    RUN_TEST(test_dijkstra_zero_weight);
+    RUN_TEST(test_dijkstra_equal_paths);
+    RUN_TEST(test_dijkstra_uint64_distance);
+    RUN_TEST(test_dijkstra_same_vertex);
+    RUN_TEST(test_dijkstra_unreachable);
+    RUN_TEST(test_dijkstra_early_exit);
+    RUN_TEST(test_dijkstra_long_chain);
+    RUN_TEST(test_dijkstra_invalid_args);
+    puts("All Dijkstra tests passed!");
+}
+
 int main(void)
 {
     printf("=== Graph Core Tests ===\n\n");
@@ -1173,6 +1452,9 @@ int main(void)
     RUN_TEST(test_cycle_invalid_args);
 
     puts("All cycle detection tests passed!");
+
+    puts("\n=== Dijkstra Tests ===");
+    run_dijkstra_tests();
 
     return EXIT_SUCCESS;
 }

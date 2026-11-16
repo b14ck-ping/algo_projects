@@ -2,7 +2,7 @@
 #include "addr_heap.h"
 #include <stddef.h>
 #include <stdio.h>
-
+#include <inttypes.h>
 
 #define MIN_count 20
 
@@ -277,12 +277,12 @@ void addr_heap_dump_heap(addr_heap_inst_t *heap){
 
     if (!heap->count) return;
     if (heap->count == 1){
-        printf("[p: %lu id: %zu]\n", heap->arr[0].prior, heap->arr[0].sequence);
+        printf("[p: %" PRIu64 " id: %zu]\n", heap->arr[0].prior, heap->arr[0].sequence);
         return;
     }
     for (size_t i = 0; i < heap->count; i = i*2 + 1){
         for (size_t j = i; j <= i*2 && j < heap->count; ++j){
-            printf("[p: %lu id: %zu] ", heap->arr[j].prior, heap->arr[j].sequence);
+            printf("[p: %" PRIu64 " id: %zu] ", heap->arr[j].prior, heap->arr[j].sequence);
         }
         printf("\n");
     }

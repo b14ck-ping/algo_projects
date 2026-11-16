@@ -305,6 +305,41 @@ static void test_handle_after_destroy(void)
 }
 
 
+static void test_uint64_priorities(void)
+{
+    const uint64_t priorities[] = {
+        0,
+        UINT32_MAX,
+        UINT64_MAX - 1,
+        UINT64_MAX
+    };
+
+    const int min_order[] = {0, 1, 2, 3};
+    const int max_order[] = {3, 2, 1, 0};
+
+    for (int mode = HEAP_MIN; mode <= HEAP_MAX; ++mode) {
+        addr_heap_inst_t *heap = make_heap((heap_type_t)mode);
+
+        int values[] = {0, 1, 2, 3};
+        addr_heap_handle_t *handles[4] = {0};
+
+        for (int i = 0; i < 4; ++i)
+            push_checked(heap, &values[i],
+                         priorities[i], &handles[i]);
+
+        const int *order = mode == HEAP_MIN
+                         ? min_order : max_order;
+
+        for (int i = 0; i < 4; ++i) {
+            int idx = order[i];
+            pop_checked(heap, &values[idx], priorities[idx]);
+        }
+
+        CHECK(addr_heap_count(heap) == 0);
+        addr_heap_deallocate(heap);
+    }
+}
+
 int main(void)
 {
     RUN_TEST(test_empty_heap);
@@ -323,6 +358,7 @@ int main(void)
 
     RUN_TEST(test_stability_after_update);
     RUN_TEST(test_handle_after_destroy);
+    RUN_TEST(test_uint64_priorities);
 
     puts("\nAll addressable heap tests passed!");
     return EXIT_SUCCESS;
