@@ -329,9 +329,6 @@ ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle)
     if(graph_get_vertices_cnt(graph, &vertices_cnt))
         return GA_ERROR_BAD_GRAPH;
 
-    if(!vertices_cnt)
-        return GA_STATUS_OK;
-
     if(vertices_cnt < 3){
         return GA_STATUS_OK;
     }
@@ -591,6 +588,106 @@ free_exit:
     }
     free(handles);   
     free(vertex_ids);
+
+    return ret_val;
+}
+
+
+ga_status_t ga_topological_sort(graph_inst_t *graph, uint32_t **out_order, size_t *out_count)
+{
+    ga_status_t ret_val = GA_STATUS_OK;
+
+    if (!graph || !out_order || !out_count)
+        return GA_ERROR_BAD_ARG;
+
+    *out_order = NULL;
+    *out_count = 0;
+
+    graph_type_t type;
+    graph_get_type(graph, &type);
+    if (type != GRAPH_UNDIRECTED)
+        return GA_ERROR_UNSUPPORTED_GRAPH;
+
+    uint32_t vertices_cnt = 0;
+    if(graph_get_vertices_cnt(graph, &vertices_cnt))
+        return GA_ERROR_BAD_GRAPH;
+
+    if(vertices_cnt < 3){
+        return GA_STATUS_OK;
+    }
+
+    uint32_t *indegree = calloc(vertices_cnt, sizeof(*indegree));
+    if (!indegree){
+        return GA_ERROR_MEMALLOC;
+    }
+
+    uint32_t *result = calloc(vertices_cnt, sizeof(*result));
+    if (!result){
+        free(indegree);
+        return GA_ERROR_MEMALLOC;
+    }
+
+    uint32_t idx = 0;
+
+    struct queue* queue = queue_create(vertices_cnt);
+    if (!queue){
+        ret_val = GA_ERROR_MEMALLOC;
+        goto free_exit;
+    }
+
+    for (uint32_t i = 0; i < vertices_cnt; i++){
+        const graph_edge_t *neighbours = NULL;
+        uint32_t neighbours_cnt = 0;
+        if (graph_get_neighbours(graph, i, 
+                        &neighbours, &neighbours_cnt) != GRAPH_STATUS_OK){
+            ret_val = GA_ERROR_BAD_GRAPH;
+            goto free_exit;
+        }
+            
+
+        for (uint32_t j = 0; j < neighbours_cnt; ++j){
+            uint32_t neighbour = neighbours[j].vertex_id;
+            indegree[neighbour]++;
+        }
+    }
+
+    for (uint32_t i = 0; i < vertices_cnt; i++){
+        if (indegree[i] == 0)
+            queue_enqueue(queue, i);
+    }
+
+    while(!queue_is_empty(queue)){
+        uint32_t cur_vert = queue_dequeue(queue);
+        result[idx++] = cur_vert;
+
+        const graph_edge_t *neighbours = NULL;
+        uint32_t neighbours_cnt = 0;
+        if (graph_get_neighbours(graph, cur_vert, 
+                        &neighbours, &neighbours_cnt) != GRAPH_STATUS_OK){
+            ret_val = GA_ERROR_BAD_GRAPH;
+            goto free_exit;
+        }
+            
+        for (uint32_t j = 0; j < neighbours_cnt; ++j){
+            uint32_t neighbour = neighbours[j].vertex_id;
+            indegree[neighbour]--;
+            if (indegree[neighbour] == 0)
+                queue_enqueue(queue, neighbour);
+        }
+    }
+
+    if (idx < vertices_cnt){
+        ret_val = GA_ERROR_CYCLE;
+        free(result);
+        goto free_exit;
+    }
+
+    *out_order = result;
+    *out_count = idx;
+
+free_exit:
+    free(indegree);
+    queue_free(queue);
 
     return ret_val;
 }
