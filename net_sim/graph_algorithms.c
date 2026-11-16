@@ -605,14 +605,14 @@ ga_status_t ga_topological_sort(graph_inst_t *graph, uint32_t **out_order, size_
 
     graph_type_t type;
     graph_get_type(graph, &type);
-    if (type != GRAPH_UNDIRECTED)
+    if (type != GRAPH_DIRECTED)
         return GA_ERROR_UNSUPPORTED_GRAPH;
 
     uint32_t vertices_cnt = 0;
     if(graph_get_vertices_cnt(graph, &vertices_cnt))
         return GA_ERROR_BAD_GRAPH;
 
-    if(vertices_cnt < 3){
+    if(!vertices_cnt){
         return GA_STATUS_OK;
     }
 
