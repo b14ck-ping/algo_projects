@@ -22,6 +22,11 @@ struct queue {
     uint32_t data[];
 };
 
+static ga_status_t ga_has_cycle_directed(
+    graph_inst_t *graph,
+    bool *out_has_cycle
+);
+
 static struct queue* queue_create(size_t size)
 {
     struct queue* buff = malloc(sizeof(struct queue) + sizeof(uint32_t)*size);
@@ -191,12 +196,12 @@ err_exit:
 struct stack {
     uint32_t stack_capacity;
     uint32_t stack_hight;
-    uint32_t stack[];
+    void* stack[];
 };
 
 static struct stack *stack_create(uint32_t cap)
 {
-    struct stack *stack = malloc(sizeof(struct stack) + cap*sizeof(uint32_t));
+    struct stack *stack = malloc(sizeof(struct stack) + cap*sizeof(*stack));
     if (!stack)
         return NULL;
 
@@ -210,14 +215,19 @@ static void stack_free(struct stack *stack)
     free(stack);
 }
 
-static void stack_push(struct stack *stack, uint32_t item)
+static void stack_push(struct stack *stack, void* item)
 {
     stack->stack[stack->stack_hight++] = item;
 }
 
-static uint32_t stack_pop(struct stack *stack)
+static void* stack_pop(struct stack *stack)
 {
     return stack->stack[--stack->stack_hight];
+}
+
+static void* stack_peek(struct stack *stack)
+{
+    return stack->stack[stack->stack_hight-1];
 }
 
 static bool stack_is_empty(struct stack *stack)
@@ -258,30 +268,41 @@ ga_status_t ga_find_components(graph_inst_t *graph, uint32_t **out_components, u
     if(!components)
         return GA_ERROR_MEMALLOC;
 
-    memset(components, 0xFF, vertices_cnt*sizeof(*components));
-
-    struct stack *stk = stack_create(vertices_cnt);
-    if(!stk){
+    uint32_t *vtx_ids = calloc(vertices_cnt, sizeof(*vtx_ids));
+    if(!vtx_ids){
         free(components);
         return GA_ERROR_MEMALLOC;
     }
-        
+
+    for(uint32_t i = 0; i < vertices_cnt; i++)
+        vtx_ids[i] = i;
+
+    struct stack *stk = stack_create(vertices_cnt);
+    if(!stk){
+        free(vtx_ids);
+        free(components);
+        return GA_ERROR_MEMALLOC;
+    }
+
+    memset(components, 0xFF, vertices_cnt*sizeof(*components));    
+
     uint32_t component_idx = 0;
     for(uint32_t i = 0; i < vertices_cnt; i++){
         if (components[i] != COMPONENT_UNVISITED)
             continue;
 
-        stack_push(stk, i);
+        stack_push(stk, &vtx_ids[i]);
         components[i] = component_idx;
 
         while(!stack_is_empty(stk)){
-            uint32_t cur_vertex = stack_pop(stk);
+            uint32_t cur_vertex = *(uint32_t*)stack_pop(stk);
 
             const graph_edge_t *neighbours = NULL;
             uint32_t neghbours_cnt = 0;
             if (graph_get_neighbours(graph, cur_vertex, 
                             &neighbours, &neghbours_cnt) != GRAPH_STATUS_OK){
                 free(components);
+                free(vtx_ids);
                 stack_free(stk);
                 return GA_ERROR_BAD_GRAPH;
             }
@@ -293,7 +314,7 @@ ga_status_t ga_find_components(graph_inst_t *graph, uint32_t **out_components, u
                     continue;
 
                 components[neighbour] = component_idx;
-                stack_push(stk, neighbour);
+                stack_push(stk, &vtx_ids[neighbour]);
             }
         }
         component_idx++;
@@ -305,6 +326,7 @@ ga_status_t ga_find_components(graph_inst_t *graph, uint32_t **out_components, u
     *out_components_count = component_idx;
 
     stack_free(stk);
+    free(vtx_ids);
 
     return ret_val;
 }
@@ -323,7 +345,7 @@ ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle)
     graph_get_type(graph, &type);
 
     if (type != GRAPH_UNDIRECTED)
-        return GA_ERROR_UNSUPPORTED_GRAPH;
+        return ga_has_cycle_directed(graph, out_has_cycle);
 
     uint32_t vertices_cnt = 0;
     if(graph_get_vertices_cnt(graph, &vertices_cnt))
@@ -333,13 +355,25 @@ ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle)
         return GA_STATUS_OK;
     }
 
-    bool *visited = calloc(vertices_cnt, sizeof(*visited));
-    if(!visited)
+    uint32_t *vtx_ids = calloc(vertices_cnt, sizeof(*vtx_ids));
+    if(!vtx_ids){
         return GA_ERROR_MEMALLOC;
+    }
+
+    for(uint32_t i = 0; i < vertices_cnt; i++)
+        vtx_ids[i] = i;
+
+    bool *visited = calloc(vertices_cnt, sizeof(*visited));
+    if(!visited){
+        free(vtx_ids);
+        return GA_ERROR_MEMALLOC;
+    }
+        
 
     uint32_t *parents = calloc(vertices_cnt, sizeof(*parents));
     if(!parents){
         free(visited);
+        free(vtx_ids);
         return GA_ERROR_MEMALLOC;
     }
         
@@ -349,6 +383,7 @@ ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle)
     if(!stk){
         free(visited);
         free(parents);
+        free(vtx_ids);
         return GA_ERROR_MEMALLOC;
     }
 
@@ -356,11 +391,11 @@ ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle)
         if (visited[i])
             continue;
 
-        stack_push(stk, i);
+        stack_push(stk, &vtx_ids[i]);
         visited[i] = true;
 
         while(!stack_is_empty(stk)){
-            uint32_t cur_vertex = stack_pop(stk);
+            uint32_t cur_vertex = *(uint32_t*)stack_pop(stk);
 
             const graph_edge_t *neighbours = NULL;
             uint32_t neghbours_cnt = 0;
@@ -381,7 +416,7 @@ ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle)
 
                 visited[neighbour] = true;
                 parents[neighbour] = cur_vertex;
-                stack_push(stk, neighbour);
+                stack_push(stk, &vtx_ids[neighbour]);
             }
         }
     }
@@ -392,6 +427,7 @@ free_exit:
     stack_free(stk);
     free(visited);
     free(parents);
+    free(vtx_ids);
     *out_has_cycle = out;
     return ret_val;
 }
@@ -632,6 +668,7 @@ ga_status_t ga_topological_sort(graph_inst_t *graph, uint32_t **out_order, size_
     struct queue* queue = queue_create(vertices_cnt);
     if (!queue){
         ret_val = GA_ERROR_MEMALLOC;
+        free(result);
         goto free_exit;
     }
 
@@ -641,6 +678,7 @@ ga_status_t ga_topological_sort(graph_inst_t *graph, uint32_t **out_order, size_
         if (graph_get_neighbours(graph, i, 
                         &neighbours, &neighbours_cnt) != GRAPH_STATUS_OK){
             ret_val = GA_ERROR_BAD_GRAPH;
+            free(result);
             goto free_exit;
         }
             
@@ -665,6 +703,7 @@ ga_status_t ga_topological_sort(graph_inst_t *graph, uint32_t **out_order, size_
         if (graph_get_neighbours(graph, cur_vert, 
                         &neighbours, &neighbours_cnt) != GRAPH_STATUS_OK){
             ret_val = GA_ERROR_BAD_GRAPH;
+            free(result);
             goto free_exit;
         }
             
@@ -688,6 +727,104 @@ ga_status_t ga_topological_sort(graph_inst_t *graph, uint32_t **out_order, size_
 free_exit:
     free(indegree);
     queue_free(queue);
+
+    return ret_val;
+}
+
+typedef enum {DFS_WHITE, DFS_GRAY, DFS_BLACK} vtx_color_t;
+typedef struct {
+    uint32_t vertex;
+    uint32_t next_neighbour;
+} dfs_frame_t;
+
+static ga_status_t ga_has_cycle_directed(graph_inst_t *graph, bool *out_has_cycle)
+{
+    ga_status_t ret_val = GA_STATUS_OK;
+
+    if (!graph || !out_has_cycle )
+        return GA_ERROR_BAD_ARG;
+
+    *out_has_cycle = false;
+
+    graph_type_t type;
+    graph_get_type(graph, &type);
+
+    uint32_t vertices_cnt = 0;
+    if(graph_get_vertices_cnt(graph, &vertices_cnt))
+        return GA_ERROR_BAD_GRAPH;
+
+    if(!vertices_cnt){
+        return GA_STATUS_OK;
+    }
+
+    struct stack *stk = stack_create(vertices_cnt);
+    if (!stk)
+        return GA_ERROR_MEMALLOC;
+
+    vtx_color_t *colors = calloc(vertices_cnt, sizeof(*colors));
+    if(!colors){
+        stack_free(stk);
+        return GA_ERROR_MEMALLOC;
+    }
+
+    dfs_frame_t *frames = calloc(vertices_cnt, sizeof(*frames));
+    if(!frames){
+        stack_free(stk);
+        free(colors);
+        return GA_ERROR_MEMALLOC;
+    }
+
+    bool has_cycle = false;
+    for (uint32_t i = 0; i < vertices_cnt; i++){
+        if (colors[i] != DFS_WHITE)
+            continue;
+
+        colors[i] = DFS_GRAY;
+        frames[i].vertex = i;
+        frames[i].next_neighbour = 0;
+        stack_push(stk, &frames[i]);
+
+        while (!stack_is_empty(stk)){
+            dfs_frame_t *frame = stack_peek(stk);
+
+            const graph_edge_t *neighbours = NULL;
+            uint32_t neighbours_cnt = 0;
+            if (graph_get_neighbours(graph, frame->vertex, 
+                            &neighbours, &neighbours_cnt) != GRAPH_STATUS_OK){
+                ret_val = GA_ERROR_BAD_GRAPH;
+                goto free_exit;
+            }
+
+            if (frame->next_neighbour == neighbours_cnt){
+                colors[frame->vertex] = DFS_BLACK;
+                stack_pop(stk);
+                continue;
+            }
+
+            uint32_t neighbour = frame->next_neighbour;
+            frame->next_neighbour++;
+             
+            if(colors[neighbour] == DFS_GRAY){
+                has_cycle = true;
+                goto early_exit;
+            }
+
+            if(colors[neighbour] == DFS_WHITE){
+                colors[neighbour] = DFS_GRAY;
+                frames[neighbour].vertex = neighbour;
+                frames[neighbour].next_neighbour = 0;
+                stack_push(stk, &frames[neighbour]);
+            }
+        }
+    }
+
+early_exit:
+    *out_has_cycle = has_cycle;
+
+free_exit:
+    stack_free(stk);  
+    free(colors);  
+    free(frames);
 
     return ret_val;
 }
