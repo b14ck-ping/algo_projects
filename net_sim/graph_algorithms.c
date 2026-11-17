@@ -201,7 +201,7 @@ struct stack {
 
 static struct stack *stack_create(uint32_t cap)
 {
-    struct stack *stack = malloc(sizeof(struct stack) + cap*sizeof(*stack));
+    struct stack *stack = malloc(sizeof(struct stack) + cap*sizeof(stack->stack[0]));
     if (!stack)
         return NULL;
 
@@ -801,7 +801,7 @@ static ga_status_t ga_has_cycle_directed(graph_inst_t *graph, bool *out_has_cycl
                 continue;
             }
 
-            uint32_t neighbour = frame->next_neighbour;
+            uint32_t neighbour = neighbours[frame->next_neighbour].vertex_id;
             frame->next_neighbour++;
              
             if(colors[neighbour] == DFS_GRAY){
