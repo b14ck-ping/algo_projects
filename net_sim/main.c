@@ -1423,6 +1423,574 @@ static void run_dijkstra_tests(void)
     puts("All Dijkstra tests passed!");
 }
 
+/*
+ * Topological sorting (Kahn) tests.
+ * Paste into net_sim/main.c BEFORE int main(void).
+ * Requires existing CHECK, RUN_TEST, add_vertex and graph headers.
+ * Requires ga_topological_sort() and GA_ERROR_CYCLE in graph_algorithms.h.
+ */
+
+typedef struct {
+    uint32_t from;
+    uint32_t to;
+} kahn_test_edge_t;
+
+#define KAHN_COUNT(a) (sizeof(a) / sizeof((a)[0]))
+
+static graph_inst_t *kahn_make_graph(graph_type_t type,
+                                     uint32_t vertex_count,
+                                     const kahn_test_edge_t *edges,
+                                     size_t edge_count)
+{
+    CHECK(edges != NULL || edge_count == 0);
+
+    graph_inst_t *g = graph_create(type);
+    CHECK(g != NULL);
+
+    for (uint32_t i = 0; i < vertex_count; ++i)
+        CHECK(add_vertex(g) == i);
+
+    for (size_t i = 0; i < edge_count; ++i)
+        CHECK(graph_add_edge(g, edges[i].from, edges[i].to)
+              == GRAPH_STATUS_OK);
+
+    return g;
+}
+
+/* Validate ANY correct topological order, not only a chosen one. */
+static void kahn_check_order(graph_inst_t *g,
+                             const uint32_t *order,
+                             size_t count)
+{
+    uint32_t vertices = 0;
+    CHECK(graph_get_vertices_cnt(g, &vertices) == GRAPH_STATUS_OK);
+    CHECK(count == vertices);
+
+    if (vertices == 0) {
+        CHECK(order == NULL);
+        return;
+    }
+
+    CHECK(order != NULL);
+
+    size_t *position = malloc((size_t)vertices * sizeof(*position));
+    CHECK(position != NULL);
+
+    for (uint32_t i = 0; i < vertices; ++i)
+        position[i] = SIZE_MAX;
+
+    /* Every vertex is present exactly once. */
+    for (size_t i = 0; i < count; ++i) {
+        uint32_t id = order[i];
+        CHECK(id < vertices);
+        CHECK(position[id] == SIZE_MAX);
+        position[id] = i;
+    }
+
+    /* For every u -> v, u must come before v. */
+    for (uint32_t u = 0; u < vertices; ++u) {
+        CHECK(position[u] != SIZE_MAX);
+
+        const graph_edge_t *neighbors = NULL;
+        uint32_t degree = 0;
+        CHECK(graph_get_neighbours(g, u, &neighbors, &degree)
+              == GRAPH_STATUS_OK);
+        for (uint32_t j = 0; j < degree; ++j) {
+            uint32_t v = neighbors[j].vertex_id;
+            CHECK(v < vertices);
+            CHECK(position[u] < position[v]);
+        }
+    }
+
+    free(position);
+}
+
+static void kahn_expect_success(graph_inst_t *g)
+{
+    uint32_t sentinel = UINT32_MAX;
+    uint32_t *order = &sentinel;
+    size_t count = SIZE_MAX;
+
+    CHECK(ga_topological_sort(g, &order, &count) == GA_STATUS_OK);
+    kahn_check_order(g, order, count);
+    free(order);
+}
+
+static void kahn_expect_cycle(graph_inst_t *g)
+{
+    uint32_t sentinel = UINT32_MAX;
+    uint32_t *order = &sentinel;
+    size_t count = SIZE_MAX;
+
+    CHECK(ga_topological_sort(g, &order, &count) == GA_ERROR_CYCLE);
+    CHECK(order == NULL);
+    CHECK(count == 0);
+}
+
+/* 1. Empty directed graph: valid DAG with empty order. */
+static void test_kahn_empty(void)
+{
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 0, NULL, 0);
+    kahn_expect_success(g);
+    graph_free(g);
+}
+
+/* 2. Single isolated vertex. */
+static void test_kahn_single_vertex(void)
+{
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 1, NULL, 0);
+    kahn_expect_success(g);
+    graph_free(g);
+}
+
+/* 3. Several isolated vertices: no dependencies at all. */
+static void test_kahn_all_isolated(void)
+{
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 20, NULL, 0);
+    kahn_expect_success(g);
+    graph_free(g);
+}
+
+/* 4. Chain, which has a unique topological order. */
+static void test_kahn_chain(void)
+{
+    const kahn_test_edge_t edges[] = {
+        {0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}
+    };
+    graph_inst_t *g = kahn_make_graph(
+        GRAPH_DIRECTED, 6, edges, KAHN_COUNT(edges));
+    kahn_expect_success(g);
+    graph_free(g);
+}
+
+/* 5. Diamond: multiple valid orders; 3 waits for both 1 and 2. */
+static void test_kahn_diamond(void)
+{
+    const kahn_test_edge_t edges[] = {
+        {0, 1}, {0, 2}, {1, 3}, {2, 3}, {3, 4}
+    };
+    graph_inst_t *g = kahn_make_graph(
+        GRAPH_DIRECTED, 5, edges, KAHN_COUNT(edges));
+    kahn_expect_success(g);
+    graph_free(g);
+}
+
+/* 6. Independent DAG components and an isolated vertex. */
+static void test_kahn_disconnected(void)
+{
+    const kahn_test_edge_t edges[] = {
+        {0, 1}, {1, 2}, {4, 5}, {6, 7}
+    };
+    graph_inst_t *g = kahn_make_graph(
+        GRAPH_DIRECTED, 8, edges, KAHN_COUNT(edges));
+    kahn_expect_success(g);
+    graph_free(g);
+}
+
+/* 7. Edge weights must not affect dependency ordering. */
+static void test_kahn_weighted(void)
+{
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 5, NULL, 0);
+    CHECK(graph_add_weighted_edge(g, 0, 2, UINT32_MAX)
+          == GRAPH_STATUS_OK);
+    CHECK(graph_add_weighted_edge(g, 1, 2, 0)
+          == GRAPH_STATUS_OK);
+    CHECK(graph_add_weighted_edge(g, 2, 3, 17)
+          == GRAPH_STATUS_OK);
+    CHECK(graph_add_weighted_edge(g, 3, 4, 1)
+          == GRAPH_STATUS_OK);
+    kahn_expect_success(g);
+    graph_free(g);
+}
+
+/* 8. Two-vertex cycle. The graph API forbids self-loops. */
+static void test_kahn_two_vertex_cycle(void)
+{
+    const kahn_test_edge_t edges[] = {{0, 1}, {1, 0}};
+    graph_inst_t *g = kahn_make_graph(
+        GRAPH_DIRECTED, 2, edges, KAHN_COUNT(edges));
+    kahn_expect_cycle(g);
+    graph_free(g);
+}
+
+/* 9. Three-vertex cycle. */
+static void test_kahn_triangle_cycle(void)
+{
+    const kahn_test_edge_t edges[] = {
+        {0, 1}, {1, 2}, {2, 0}
+    };
+    graph_inst_t *g = kahn_make_graph(
+        GRAPH_DIRECTED, 3, edges, KAHN_COUNT(edges));
+    kahn_expect_cycle(g);
+    graph_free(g);
+}
+
+/* 10. Some vertices are processed before a cycle blocks progress. */
+static void test_kahn_partial_cycle(void)
+{
+    const kahn_test_edge_t edges[] = {
+        {0, 1}, {1, 2}, {2, 3}, {3, 2}, {4, 5}
+    };
+    graph_inst_t *g = kahn_make_graph(
+        GRAPH_DIRECTED, 6, edges, KAHN_COUNT(edges));
+    kahn_expect_cycle(g);
+    graph_free(g);
+}
+
+/* 11. Cycle in one component; another component is acyclic. */
+static void test_kahn_disconnected_cycle(void)
+{
+    const kahn_test_edge_t edges[] = {
+        {0, 1}, {1, 2}, {3, 4}, {4, 5}, {5, 3}
+    };
+    graph_inst_t *g = kahn_make_graph(
+        GRAPH_DIRECTED, 7, edges, KAHN_COUNT(edges));
+    kahn_expect_cycle(g);
+    graph_free(g);
+}
+
+/* 12. Many initial zero-indegree vertices: stress the queue. */
+static void test_kahn_many_roots(void)
+{
+    enum { N = 256 };
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, N, NULL, 0);
+
+    CHECK(graph_add_edge(g, 0, N - 1) == GRAPH_STATUS_OK);
+    CHECK(graph_add_edge(g, 1, N - 1) == GRAPH_STATUS_OK);
+    CHECK(graph_add_edge(g, 2, N - 1) == GRAPH_STATUS_OK);
+
+    kahn_expect_success(g);
+    graph_free(g);
+}
+
+/* 13. Many inbound edges to one vertex: all dependencies matter. */
+static void test_kahn_many_parents(void)
+{
+    enum { SOURCES = 128, N = SOURCES + 2 };
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, N, NULL, 0);
+
+    for (uint32_t u = 0; u < SOURCES; ++u)
+        CHECK(graph_add_edge(g, u, SOURCES) == GRAPH_STATUS_OK);
+    CHECK(graph_add_edge(g, SOURCES, SOURCES + 1)
+          == GRAPH_STATUS_OK);
+
+    kahn_expect_success(g);
+    graph_free(g);
+}
+
+/* 14. Long dependency chain: no recursion is needed. */
+static void test_kahn_long_chain(void)
+{
+    enum { N = 1000 };
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, N, NULL, 0);
+
+    for (uint32_t u = 0; u + 1 < N; ++u)
+        CHECK(graph_add_edge(g, u, u + 1) == GRAPH_STATUS_OK);
+
+    kahn_expect_success(g);
+    graph_free(g);
+}
+
+/* 15. Running the algorithm twice must not mutate the graph. */
+static void test_kahn_repeat_call(void)
+{
+    const kahn_test_edge_t edges[] = {
+        {0, 2}, {1, 2}, {2, 4}, {3, 4}
+    };
+    graph_inst_t *g = kahn_make_graph(
+        GRAPH_DIRECTED, 5, edges, KAHN_COUNT(edges));
+
+    kahn_expect_success(g);
+    kahn_expect_success(g);
+
+    graph_free(g);
+}
+
+/* 16. Kahn only supports directed graphs. */
+static void test_kahn_undirected_rejected(void)
+{
+    const kahn_test_edge_t edges[] = {{0, 1}};
+    graph_inst_t *g = kahn_make_graph(
+        GRAPH_UNDIRECTED, 2, edges, KAHN_COUNT(edges));
+
+    uint32_t sentinel = UINT32_MAX;
+    uint32_t *order = &sentinel;
+    size_t count = SIZE_MAX;
+
+    CHECK(ga_topological_sort(g, &order, &count)
+          == GA_ERROR_UNSUPPORTED_GRAPH);
+    CHECK(order == NULL);
+    CHECK(count == 0);
+
+    graph_free(g);
+}
+
+/* 17. Invalid arguments. */
+static void test_kahn_invalid_args(void)
+{
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 2, NULL, 0);
+    uint32_t *order = NULL;
+    size_t count = 0;
+
+    CHECK(ga_topological_sort(NULL, &order, &count)
+          == GA_ERROR_BAD_ARG);
+    CHECK(ga_topological_sort(g, NULL, &count)
+          == GA_ERROR_BAD_ARG);
+    CHECK(ga_topological_sort(g, &order, NULL)
+          == GA_ERROR_BAD_ARG);
+
+    graph_free(g);
+}
+
+static void run_kahn_tests(void)
+{
+    RUN_TEST(test_kahn_empty);
+    RUN_TEST(test_kahn_single_vertex);
+    RUN_TEST(test_kahn_all_isolated);
+    RUN_TEST(test_kahn_chain);
+    RUN_TEST(test_kahn_diamond);
+    RUN_TEST(test_kahn_disconnected);
+    RUN_TEST(test_kahn_weighted);
+    RUN_TEST(test_kahn_two_vertex_cycle);
+    RUN_TEST(test_kahn_triangle_cycle);
+    RUN_TEST(test_kahn_partial_cycle);
+    RUN_TEST(test_kahn_disconnected_cycle);
+    RUN_TEST(test_kahn_many_roots);
+    RUN_TEST(test_kahn_many_parents);
+    RUN_TEST(test_kahn_long_chain);
+    RUN_TEST(test_kahn_repeat_call);
+    RUN_TEST(test_kahn_undirected_rejected);
+    RUN_TEST(test_kahn_invalid_args);
+    puts("All Kahn tests passed!");
+}
+
+/*
+ * Directed-cycle DFS tests for net_sim/main.c.
+ * Paste AFTER the Kahn test helpers (kahn_make_graph, kahn_test_edge_t,
+ * KAHN_COUNT) and BEFORE main().
+ * Uses existing CHECK/RUN_TEST macros and graph API.
+ * Does not assume a particular DFS traversal order.
+ */
+
+static void directed_cycle_expect(graph_inst_t *g, bool expected)
+{
+    /* Start with the opposite value to catch a missing output assignment. */
+    bool actual = !expected;
+    CHECK(ga_has_cycle(g, &actual) == GA_STATUS_OK);
+    CHECK(actual == expected);
+
+    /* Calling twice must not leave per-vertex colors in the graph. */
+    actual = !expected;
+    CHECK(ga_has_cycle(g, &actual) == GA_STATUS_OK);
+    CHECK(actual == expected);
+}
+
+static void test_directed_cycle_empty(void)
+{
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 0, NULL, 0);
+    directed_cycle_expect(g, false);
+    graph_free(g);
+}
+
+static void test_directed_cycle_single_vertex(void)
+{
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 1, NULL, 0);
+    directed_cycle_expect(g, false);
+    graph_free(g);
+}
+
+static void test_directed_cycle_isolated(void)
+{
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 32, NULL, 0);
+    directed_cycle_expect(g, false);
+    graph_free(g);
+}
+
+static void test_directed_cycle_chain(void)
+{
+    const kahn_test_edge_t edges[] = {
+        {0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}
+    };
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 6,
+                                     edges, KAHN_COUNT(edges));
+    directed_cycle_expect(g, false);
+    graph_free(g);
+}
+
+static void test_directed_cycle_two_vertices(void)
+{
+    const kahn_test_edge_t edges[] = {{0, 1}, {1, 0}};
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 2,
+                                     edges, KAHN_COUNT(edges));
+    directed_cycle_expect(g, true);
+    graph_free(g);
+}
+
+static void test_directed_cycle_triangle(void)
+{
+    const kahn_test_edge_t edges[] = {{0, 1}, {1, 2}, {2, 0}};
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 3,
+                                     edges, KAHN_COUNT(edges));
+    directed_cycle_expect(g, true);
+    graph_free(g);
+}
+
+static void test_directed_cycle_diamond(void)
+{
+    /* 0 -> 1 -> 3 and 0 -> 2 -> 3: two paths, but no cycle.
+       A simple 'visited' flag can give a false positive here. */
+    const kahn_test_edge_t edges[] = {
+        {0, 1}, {0, 2}, {1, 3}, {2, 3}
+    };
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 4,
+                                     edges, KAHN_COUNT(edges));
+    directed_cycle_expect(g, false);
+    graph_free(g);
+}
+
+static void test_directed_cycle_cross_and_forward_edges(void)
+{
+    /* Shared descendants and forward edges are not back edges. */
+    const kahn_test_edge_t edges[] = {
+        {0, 1}, {0, 2}, {0, 4}, {1, 2}, {1, 3},
+        {2, 3}, {2, 4}, {3, 4}, {1, 5}, {4, 5}
+    };
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 6,
+                                     edges, KAHN_COUNT(edges));
+    directed_cycle_expect(g, false);
+    graph_free(g);
+}
+
+static void test_directed_cycle_back_edge_to_ancestor(void)
+{
+    /* 0 -> 1 -> 2 -> 3 -> 1 is a cycle; vertex 1 is GRAY. */
+    const kahn_test_edge_t edges[] = {
+        {0, 1}, {1, 2}, {2, 3}, {3, 1}, {0, 4}
+    };
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 5,
+                                     edges, KAHN_COUNT(edges));
+    directed_cycle_expect(g, true);
+    graph_free(g);
+}
+
+static void test_directed_cycle_disconnected_no_cycle(void)
+{
+    const kahn_test_edge_t edges[] = {
+        {0, 1}, {1, 2}, {4, 3}, {4, 5}, {6, 7}
+    };
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 9,
+                                     edges, KAHN_COUNT(edges));
+    directed_cycle_expect(g, false);
+    graph_free(g);
+}
+
+static void test_directed_cycle_disconnected_with_cycle(void)
+{
+    /* First component is a DAG. Only a later component has a cycle. */
+    const kahn_test_edge_t edges[] = {
+        {0, 1}, {1, 2}, {3, 4}, {4, 5}, {5, 3}
+    };
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 7,
+                                     edges, KAHN_COUNT(edges));
+    directed_cycle_expect(g, true);
+    graph_free(g);
+}
+
+static void test_directed_cycle_many_parents(void)
+{
+    /* All incoming edges point into a sink, with no outgoing edge. */
+    enum { SOURCES = 128, SINK = SOURCES, N = SOURCES + 1 };
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, N, NULL, 0);
+    for (uint32_t i = 0; i < SOURCES; ++i)
+        CHECK(graph_add_edge(g, i, SINK) == GRAPH_STATUS_OK);
+    directed_cycle_expect(g, false);
+    graph_free(g);
+}
+
+static void test_directed_cycle_large_fanout(void)
+{
+    /* Stress the per-frame neighbor index and adjacency-list growth. */
+    enum { N = 512 };
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, N, NULL, 0);
+    for (uint32_t i = 1; i < N; ++i)
+        CHECK(graph_add_edge(g, 0, i) == GRAPH_STATUS_OK);
+    directed_cycle_expect(g, false);
+    graph_free(g);
+}
+
+static void test_directed_cycle_long_chain_then_cycle(void)
+{
+    /* Deep DFS without recursion; reuse the same graph after adding a cycle. */
+    enum { N = 2048 };
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, N, NULL, 0);
+    for (uint32_t i = 0; i + 1 < N; ++i)
+        CHECK(graph_add_edge(g, i, i + 1) == GRAPH_STATUS_OK);
+
+    directed_cycle_expect(g, false);
+
+    CHECK(graph_add_edge(g, N - 1, N / 2) == GRAPH_STATUS_OK);
+    directed_cycle_expect(g, true);
+    graph_free(g);
+}
+
+static void test_directed_cycle_weights_irrelevant(void)
+{
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 4, NULL, 0);
+    CHECK(graph_add_weighted_edge(g, 0, 1, 0) == GRAPH_STATUS_OK);
+    CHECK(graph_add_weighted_edge(g, 1, 2, UINT32_MAX) == GRAPH_STATUS_OK);
+    CHECK(graph_add_weighted_edge(g, 2, 3, 5) == GRAPH_STATUS_OK);
+    directed_cycle_expect(g, false);
+
+    CHECK(graph_add_weighted_edge(g, 3, 1, 0) == GRAPH_STATUS_OK);
+    directed_cycle_expect(g, true);
+    graph_free(g);
+}
+
+static void test_directed_cycle_undirected_regression(void)
+{
+    /* Adding directed support must not break existing undirected behavior. */
+    const kahn_test_edge_t edges[] = {{0, 1}, {1, 2}};
+    graph_inst_t *g = kahn_make_graph(GRAPH_UNDIRECTED, 3,
+                                     edges, KAHN_COUNT(edges));
+    directed_cycle_expect(g, false);
+
+    CHECK(graph_add_edge(g, 2, 0) == GRAPH_STATUS_OK);
+    directed_cycle_expect(g, true);
+    graph_free(g);
+}
+
+static void test_directed_cycle_invalid_args(void)
+{
+    graph_inst_t *g = kahn_make_graph(GRAPH_DIRECTED, 2, NULL, 0);
+    bool found = false;
+    CHECK(ga_has_cycle(NULL, &found) == GA_ERROR_BAD_ARG);
+    CHECK(ga_has_cycle(g, NULL) == GA_ERROR_BAD_ARG);
+    graph_free(g);
+}
+
+static void run_directed_cycle_tests(void)
+{
+    RUN_TEST(test_directed_cycle_empty);
+    RUN_TEST(test_directed_cycle_single_vertex);
+    RUN_TEST(test_directed_cycle_isolated);
+    RUN_TEST(test_directed_cycle_chain);
+    RUN_TEST(test_directed_cycle_two_vertices);
+    RUN_TEST(test_directed_cycle_triangle);
+    RUN_TEST(test_directed_cycle_diamond);
+    RUN_TEST(test_directed_cycle_cross_and_forward_edges);
+    RUN_TEST(test_directed_cycle_back_edge_to_ancestor);
+    RUN_TEST(test_directed_cycle_disconnected_no_cycle);
+    RUN_TEST(test_directed_cycle_disconnected_with_cycle);
+    RUN_TEST(test_directed_cycle_many_parents);
+    RUN_TEST(test_directed_cycle_large_fanout);
+    RUN_TEST(test_directed_cycle_long_chain_then_cycle);
+    RUN_TEST(test_directed_cycle_weights_irrelevant);
+    RUN_TEST(test_directed_cycle_undirected_regression);
+    RUN_TEST(test_directed_cycle_invalid_args);
+    puts("All directed-cycle DFS tests passed!");
+}
+
+
 int main(void)
 {
     printf("=== Graph Core Tests ===\n\n");
@@ -1482,5 +2050,11 @@ int main(void)
     puts("\n=== Dijkstra Tests ===");
     run_dijkstra_tests();
 
+    puts("\n=== Kahn Tests ===");
+    run_kahn_tests();
+
+    puts("\n=== Directed DFS Cycle Tests ===");
+    run_directed_cycle_tests();
+    
     return EXIT_SUCCESS;
 }

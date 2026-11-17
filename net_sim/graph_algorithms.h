@@ -14,7 +14,8 @@ typedef enum {
     GA_ERROR_BAD_GRAPH,
     GA_ERROR_MEMALLOC,
     GA_ERROR_CANT_FIND_PATH, 
-    GA_ERROR_UNSUPPORTED_GRAPH
+    GA_ERROR_UNSUPPORTED_GRAPH,
+    GA_ERROR_CYCLE
 } ga_status_t;
 
 
@@ -33,5 +34,11 @@ ga_status_t ga_has_cycle(graph_inst_t *graph, bool *out_has_cycle);
 ga_status_t ga_dijkstra(graph_inst_t *graph, uint32_t from,
                         uint32_t to, uint32_t **out_path,
                         size_t *out_length, uint64_t *out_total_weight);
+
+ga_status_t ga_topological_sort(graph_inst_t *graph,
+                                uint32_t **out_order,
+                                size_t *out_count
+                            );
+
 
 #endif // GRAPH_ALGORITHMS_H
