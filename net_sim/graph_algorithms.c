@@ -877,7 +877,7 @@ ga_status_t ga_find_scc(graph_inst_t *graph, uint32_t **out_components,
     vtx_ids = calloc(vertices_cnt, sizeof(*vtx_ids));
     if(!vtx_ids){
         ret_val = GA_ERROR_MEMALLOC;
-        return ret_val;
+        goto free_exit;
     }
 
     for(uint32_t i = 0; i < vertices_cnt; i++)
@@ -886,7 +886,7 @@ ga_status_t ga_find_scc(graph_inst_t *graph, uint32_t **out_components,
     stk = stack_create(vertices_cnt);
     if(!stk){
         ret_val = GA_ERROR_MEMALLOC;
-        return ret_val;
+        goto free_exit;
     }
 
     memset(components, 0xFF, vertices_cnt*sizeof(*components));  
@@ -894,20 +894,20 @@ ga_status_t ga_find_scc(graph_inst_t *graph, uint32_t **out_components,
     visited = calloc(vertices_cnt, sizeof(*visited));
     if(!visited){
         ret_val = GA_ERROR_MEMALLOC;
-        return ret_val;
+        goto free_exit;
     }
 
     uint32_t current_order_idx = 0;
     finish_order = malloc(vertices_cnt * sizeof(*finish_order));
     if(!finish_order){
         ret_val = GA_ERROR_MEMALLOC;
-        return ret_val;
+        goto free_exit;
     }
 
     frames = calloc(vertices_cnt, sizeof(*frames));
     if(!frames){
         ret_val = GA_ERROR_MEMALLOC;
-        return ret_val;
+        goto free_exit;
     }
 
     // First DFS
