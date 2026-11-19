@@ -829,6 +829,15 @@ free_exit:
 ga_status_t ga_find_scc(graph_inst_t *graph, uint32_t **out_components,
                             uint32_t *out_vertices_count, uint32_t *out_components_count)
 {
+    graph_inst_t *t_graph = NULL;
+    uint32_t *components = NULL;
+    uint32_t *vtx_ids = NULL;
+    struct stack *stk = NULL;
+    bool *visited = NULL;
+    uint32_t *finish_order = NULL;
+    dfs_frame_t *frames = NULL;
+
+
     ga_status_t ret_val = GA_STATUS_OK;
     if (!graph || !out_components || !out_vertices_count || !out_components_count)
         return GA_ERROR_BAD_ARG;
@@ -861,54 +870,44 @@ ga_status_t ga_find_scc(graph_inst_t *graph, uint32_t **out_components,
         return GA_STATUS_OK;
     }
 
-    uint32_t *components = calloc(vertices_cnt, sizeof(uint32_t));
+    components = calloc(vertices_cnt, sizeof(uint32_t));
     if(!components)
         return GA_ERROR_MEMALLOC;
 
-    uint32_t *vtx_ids = calloc(vertices_cnt, sizeof(*vtx_ids));
+    vtx_ids = calloc(vertices_cnt, sizeof(*vtx_ids));
     if(!vtx_ids){
-        free(components);
-        return GA_ERROR_MEMALLOC;
+        ret_val = GA_ERROR_MEMALLOC;
+        return ret_val;
     }
 
     for(uint32_t i = 0; i < vertices_cnt; i++)
         vtx_ids[i] = i;
 
-    struct stack *stk = stack_create(vertices_cnt);
+    stk = stack_create(vertices_cnt);
     if(!stk){
-        free(vtx_ids);
-        free(components);
-        return GA_ERROR_MEMALLOC;
+        ret_val = GA_ERROR_MEMALLOC;
+        return ret_val;
     }
 
     memset(components, 0xFF, vertices_cnt*sizeof(*components));  
 
-    bool *visited = calloc(vertices_cnt, sizeof(*visited));
+    visited = calloc(vertices_cnt, sizeof(*visited));
     if(!visited){
-        free(vtx_ids);
-        free(components);
-        stack_free(stk);
-        return GA_ERROR_MEMALLOC;
+        ret_val = GA_ERROR_MEMALLOC;
+        return ret_val;
     }
 
     uint32_t current_order_idx = 0;
-    uint32_t *finish_order = malloc(vertices_cnt * sizeof(*finish_order));
+    finish_order = malloc(vertices_cnt * sizeof(*finish_order));
     if(!finish_order){
-        free(vtx_ids);
-        free(components);
-        stack_free(stk);
-        free(visited);
-        return GA_ERROR_MEMALLOC;
+        ret_val = GA_ERROR_MEMALLOC;
+        return ret_val;
     }
 
-    dfs_frame_t *frames = calloc(vertices_cnt, sizeof(*frames));
+    frames = calloc(vertices_cnt, sizeof(*frames));
     if(!frames){
-        free(vtx_ids);
-        free(components);
-        stack_free(stk);
-        free(visited);
-        free(finish_order);
-        return GA_ERROR_MEMALLOC;
+        ret_val = GA_ERROR_MEMALLOC;
+        return ret_val;
     }
 
     // First DFS
@@ -951,12 +950,15 @@ ga_status_t ga_find_scc(graph_inst_t *graph, uint32_t **out_components,
     }
 
     // Transposing
-    graph_inst_t *t_graph = graph_create(GRAPH_DIRECTED);
+    t_graph = graph_create(GRAPH_DIRECTED);
+    if (!t_graph) {
+        ret_val = GA_ERROR_MEMALLOC;
+        goto free_exit;
+    }
     for (uint32_t i = 0; i < vertices_cnt; i++){
         uint32_t vertex_id = 0;
         if (graph_add_vertex(t_graph, &vertex_id)){
             ret_val = GA_ERROR_MEMALLOC;
-            graph_free(t_graph);
             goto free_exit;
         }
     }
@@ -965,21 +967,20 @@ ga_status_t ga_find_scc(graph_inst_t *graph, uint32_t **out_components,
         const graph_edge_t *neighbours = NULL;
         uint32_t count = 0;
 
-        graph_get_neighbours(graph, u, &neighbours, &count);
+        if (graph_get_neighbours(graph, u, &neighbours, &count) != GRAPH_STATUS_OK){
+            ret_val = GA_ERROR_BAD_GRAPH;
+            goto free_exit;
+        }
 
         for (uint32_t j = 0; j < count; ++j) {
             uint32_t neighbour = neighbours[j].vertex_id;
 
             if (graph_add_edge(t_graph, neighbour, u)){
                 ret_val = GA_ERROR_MEMALLOC;
-                graph_free(t_graph);
                 goto free_exit;
             }
         }
     }
-
-    stack_free(stk);
-    stk = stack_create(vertices_cnt);
 
     // Second DFS
     uint32_t component_id = 0;
@@ -1018,14 +1019,15 @@ ga_status_t ga_find_scc(graph_inst_t *graph, uint32_t **out_components,
     *out_vertices_count = vertices_cnt;
     *out_components_count = component_id;
 
+    components = NULL;
+free_exit: 
     graph_free(t_graph);
-
-free_exit:
-    free(vtx_ids);
     stack_free(stk);
+    free(vtx_ids);
     free(visited);
     free(finish_order);
     free(frames);
+    free(components);
     
 
     return ret_val;
