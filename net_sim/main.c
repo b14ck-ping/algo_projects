@@ -1990,6 +1990,499 @@ static void run_directed_cycle_tests(void)
     puts("All directed-cycle DFS tests passed!");
 }
 
+/*
+ * Kosaraju SCC tests for net_sim/main.c.
+ * Insert BEFORE main() and call run_scc_tests() from main().
+ * Uses the existing CHECK, RUN_TEST, add_vertex, graph API and graph_algorithms.h.
+ * Assumes:
+ * ga_status_t ga_find_scc(graph_inst_t *, uint32_t **, uint32_t *, uint32_t *);
+ * IDs of SCCs may be assigned in ANY order.
+ */
+
+typedef struct {
+    uint32_t from;
+    uint32_t to;
+    uint32_t weight;
+} scc_test_edge_t;
+
+#define SCC_COUNT(a) (sizeof(a) / sizeof((a)[0]))
+
+static graph_inst_t *scc_make_graph(uint32_t vertex_count,
+                                    const scc_test_edge_t *edges,
+                                    size_t edge_count)
+{
+    CHECK(edges != NULL || edge_count == 0);
+
+    graph_inst_t *g = graph_create(GRAPH_DIRECTED);
+    CHECK(g != NULL);
+
+    for (uint32_t i = 0; i < vertex_count; ++i)
+        CHECK(add_vertex(g) == i);
+
+    for (size_t i = 0; i < edge_count; ++i) {
+        CHECK(graph_add_weighted_edge(g, edges[i].from,
+                                      edges[i].to, edges[i].weight)
+              == GRAPH_STATUS_OK);
+    }
+    return g;
+}
+
+static void scc_add_edge(graph_inst_t *g, uint32_t from, uint32_t to)
+{
+    CHECK(graph_add_edge(g, from, to) == GRAPH_STATUS_OK);
+}
+
+/* Compare partitions, not numeric SCC IDs. Expected labels must be in [0, groups).
+ * A bijection between expected IDs and returned IDs must exist. */
+static void scc_expect_partition(graph_inst_t *g,
+                                 const uint32_t *expected,
+                                 uint32_t expected_vertices,
+                                 uint32_t expected_groups)
+{
+    uint32_t marker = UINT32_MAX;
+    uint32_t *actual = &marker;
+    uint32_t vertices_count = UINT32_MAX;
+    uint32_t groups_count = UINT32_MAX;
+
+    CHECK(ga_find_scc(g, &actual, &vertices_count, &groups_count)
+          == GA_STATUS_OK);
+    CHECK(vertices_count == expected_vertices);
+    CHECK(groups_count == expected_groups);
+
+    if (expected_vertices == 0) {
+        CHECK(actual == NULL);
+        CHECK(groups_count == 0);
+        return;
+    }
+
+    CHECK(actual != NULL);
+    CHECK(expected != NULL);
+    CHECK(expected_groups > 0);
+
+    uint32_t *expected_to_actual = malloc((size_t)expected_groups *
+                                          sizeof(*expected_to_actual));
+    uint32_t *actual_to_expected = malloc((size_t)expected_groups *
+                                          sizeof(*actual_to_expected));
+    CHECK(expected_to_actual != NULL);
+    CHECK(actual_to_expected != NULL);
+
+    for (uint32_t k = 0; k < expected_groups; ++k) {
+        expected_to_actual[k] = UINT32_MAX;
+        actual_to_expected[k] = UINT32_MAX;
+    }
+
+    for (uint32_t v = 0; v < expected_vertices; ++v) {
+        uint32_t e = expected[v];
+        uint32_t a = actual[v];
+        CHECK(e < expected_groups);
+        CHECK(a < groups_count);
+
+        if (expected_to_actual[e] == UINT32_MAX)
+            expected_to_actual[e] = a;
+        else
+            CHECK(expected_to_actual[e] == a);
+
+        if (actual_to_expected[a] == UINT32_MAX)
+            actual_to_expected[a] = e;
+        else
+            CHECK(actual_to_expected[a] == e);
+    }
+
+    /* Reject an implementation reporting unused/phantom component IDs. */
+    for (uint32_t k = 0; k < expected_groups; ++k) {
+        CHECK(expected_to_actual[k] != UINT32_MAX);
+        CHECK(actual_to_expected[k] != UINT32_MAX);
+    }
+
+    free(expected_to_actual);
+    free(actual_to_expected);
+    free(actual);
+}
+
+/* 1. Empty directed graph. */
+static void test_scc_empty(void)
+{
+    graph_inst_t *g = scc_make_graph(0, NULL, 0);
+    scc_expect_partition(g, NULL, 0, 0);
+    graph_free(g);
+}
+
+/* 2. Single vertex without edges is a SCC. */
+static void test_scc_single_vertex(void)
+{
+    const uint32_t expected[] = {0};
+    graph_inst_t *g = scc_make_graph(1, NULL, 0);
+    scc_expect_partition(g, expected, 1, 1);
+    graph_free(g);
+}
+
+/* 3. Completely disconnected graph: all SCCs are singleton. */
+static void test_scc_isolated(void)
+{
+    enum { N = 32 };
+    uint32_t expected[N];
+    for (uint32_t i = 0; i < N; ++i)
+        expected[i] = i;
+
+    graph_inst_t *g = scc_make_graph(N, NULL, 0);
+    scc_expect_partition(g, expected, N, N);
+    graph_free(g);
+}
+
+/* 4. Reachability in one direction does not imply strong connectivity. */
+static void test_scc_one_way_edge(void)
+{
+    const scc_test_edge_t edges[] = {{0, 1, 1}};
+    const uint32_t expected[] = {0, 1};
+    graph_inst_t *g = scc_make_graph(2, edges, SCC_COUNT(edges));
+    scc_expect_partition(g, expected, 2, 2);
+    graph_free(g);
+}
+
+/* 5. A directed chain has one SCC per vertex. */
+static void test_scc_chain(void)
+{
+    const scc_test_edge_t edges[] = {
+        {0, 1, 1}, {1, 2, 1}, {2, 3, 1}, {3, 4, 1}, {0, 3, 1}
+    };
+    const uint32_t expected[] = {0, 1, 2, 3, 4};
+    graph_inst_t *g = scc_make_graph(5, edges, SCC_COUNT(edges));
+    scc_expect_partition(g, expected, 5, 5);
+    graph_free(g);
+}
+
+/* 6. One directed cycle produces one SCC. */
+static void test_scc_triangle(void)
+{
+    const scc_test_edge_t edges[] = {
+        {0, 1, 1}, {1, 2, 1}, {2, 0, 1}
+    };
+    const uint32_t expected[] = {0, 0, 0};
+    graph_inst_t *g = scc_make_graph(3, edges, SCC_COUNT(edges));
+    scc_expect_partition(g, expected, 3, 1);
+    graph_free(g);
+}
+
+/* 7. Two opposite directed edges form one SCC; one-way tail stays separate. */
+static void test_scc_mutual_pair(void)
+{
+    const scc_test_edge_t edges[] = {
+        {0, 1, 1}, {1, 0, 1}, {1, 2, 1}
+    };
+    const uint32_t expected[] = {0, 0, 1};
+    graph_inst_t *g = scc_make_graph(3, edges, SCC_COUNT(edges));
+    scc_expect_partition(g, expected, 3, 2);
+    graph_free(g);
+}
+
+/* 8. Several SCCs connected by one-way bridges must NOT merge. */
+static void test_scc_three_groups(void)
+{
+    const scc_test_edge_t edges[] = {
+        {0, 1, 1}, {1, 2, 1}, {2, 0, 1},
+        {3, 4, 1}, {4, 3, 1},
+        {5, 6, 1}, {6, 7, 1}, {7, 5, 1},
+        {2, 3, 1}, {4, 5, 1}
+    };
+    const uint32_t expected[] = {0, 0, 0, 1, 1, 2, 2, 2};
+    graph_inst_t *g = scc_make_graph(8, edges, SCC_COUNT(edges));
+    scc_expect_partition(g, expected, 8, 3);
+    graph_free(g);
+}
+
+/* 9. Bridge points from larger vertex IDs to smaller ones. */
+static void test_scc_reverse_bridge(void)
+{
+    const scc_test_edge_t edges[] = {
+        {0, 1, 1}, {1, 0, 1}, {2, 3, 1}, {3, 2, 1}, {2, 0, 1}
+    };
+    const uint32_t expected[] = {0, 0, 1, 1};
+    graph_inst_t *g = scc_make_graph(4, edges, SCC_COUNT(edges));
+    scc_expect_partition(g, expected, 4, 2);
+    graph_free(g);
+}
+
+/* 10. Diamond DAG: shared descendants are not SCCs. */
+static void test_scc_diamond(void)
+{
+    const scc_test_edge_t edges[] = {
+        {0, 1, 1}, {0, 2, 1}, {1, 3, 1}, {2, 3, 1}
+    };
+    const uint32_t expected[] = {0, 1, 2, 3};
+    graph_inst_t *g = scc_make_graph(4, edges, SCC_COUNT(edges));
+    scc_expect_partition(g, expected, 4, 4);
+    graph_free(g);
+}
+
+/* 11. Disconnected components, different SCC sizes, isolated vertices. */
+static void test_scc_disconnected(void)
+{
+    const scc_test_edge_t edges[] = {
+        {0, 1, 1}, {1, 0, 1}, {3, 4, 1},
+        {5, 6, 1}, {6, 7, 1}, {7, 5, 1}
+    };
+    const uint32_t expected[] = {0, 0, 1, 2, 3, 4, 4, 4, 5};
+    graph_inst_t *g = scc_make_graph(9, edges, SCC_COUNT(edges));
+    scc_expect_partition(g, expected, 9, 6);
+    graph_free(g);
+}
+
+/* 12. A directed cycle BETWEEN SCC candidates merges them all. */
+static void test_scc_cycle_between_groups(void)
+{
+    const scc_test_edge_t edges[] = {
+        {0, 1, 1}, {1, 0, 1},
+        {2, 3, 1}, {3, 2, 1},
+        {4, 5, 1}, {5, 4, 1},
+        {1, 2, 1}, {3, 4, 1}, {5, 0, 1}
+    };
+    const uint32_t expected[] = {0, 0, 0, 0, 0, 0};
+    graph_inst_t *g = scc_make_graph(6, edges, SCC_COUNT(edges));
+    scc_expect_partition(g, expected, 6, 1);
+    graph_free(g);
+}
+
+/* 13. Multiple branches between SCCs, no return edges. */
+static void test_scc_branching_condensation(void)
+{
+    const scc_test_edge_t edges[] = {
+        {0, 1, 1}, {1, 2, 1}, {2, 0, 1},
+        {3, 4, 1}, {4, 3, 1},
+        {6, 7, 1}, {7, 6, 1},
+        {2, 3, 1}, {2, 5, 1}, {4, 6, 1}, {5, 7, 1}
+    };
+    const uint32_t expected[] = {0, 0, 0, 1, 1, 2, 3, 3};
+    graph_inst_t *g = scc_make_graph(8, edges, SCC_COUNT(edges));
+    scc_expect_partition(g, expected, 8, 4);
+    graph_free(g);
+}
+
+/* 14. Edge weights are irrelevant, including 0 and UINT32_MAX. */
+static void test_scc_weighted(void)
+{
+    const scc_test_edge_t edges[] = {
+        {0, 1, 0}, {1, 0, UINT32_MAX},
+        {1, 2, 42}, {2, 3, UINT32_MAX}, {3, 2, 0}
+    };
+    const uint32_t expected[] = {0, 0, 1, 1};
+    graph_inst_t *g = scc_make_graph(4, edges, SCC_COUNT(edges));
+    scc_expect_partition(g, expected, 4, 2);
+    graph_free(g);
+}
+
+/* 15. More outgoing neighbors than the initial adjacency-list capacity. */
+static void test_scc_large_fanout(void)
+{
+    enum { N = 151 };
+    uint32_t expected[N];
+    graph_inst_t *g = scc_make_graph(N, NULL, 0);
+    for (uint32_t i = 0; i < N; ++i)
+        expected[i] = i;
+    for (uint32_t i = 1; i < N; ++i)
+        scc_add_edge(g, 0, i);
+
+    scc_expect_partition(g, expected, N, N);
+    graph_free(g);
+}
+
+/* 16. Dense SCC, followed by two one-way downstream vertices. */
+static void test_scc_dense(void)
+{
+    enum { CORE = 41, N = CORE + 2 };
+    uint32_t expected[N];
+    graph_inst_t *g = scc_make_graph(N, NULL, 0);
+
+    for (uint32_t i = 0; i < CORE; ++i) {
+        expected[i] = 0;
+        for (uint32_t j = 0; j < CORE; ++j) {
+            if (i != j)
+                scc_add_edge(g, i, j);
+        }
+    }
+    expected[CORE] = 1;
+    expected[CORE + 1] = 2;
+    scc_add_edge(g, CORE - 1, CORE);
+    scc_add_edge(g, CORE, CORE + 1);
+
+    scc_expect_partition(g, expected, N, 3);
+    graph_free(g);
+}
+
+/* 17. Long chain: N singleton SCCs. Adding one edge makes one large SCC. */
+static void test_scc_long_chain_then_cycle(void)
+{
+    enum { N = 2048 };
+    uint32_t *expected = malloc((size_t)N * sizeof(*expected));
+    CHECK(expected != NULL);
+
+    graph_inst_t *g = scc_make_graph(N, NULL, 0);
+    for (uint32_t i = 0; i < N; ++i)
+        expected[i] = i;
+    for (uint32_t i = 0; i + 1 < N; ++i)
+        scc_add_edge(g, i, i + 1);
+
+    scc_expect_partition(g, expected, N, N);
+
+    scc_add_edge(g, N - 1, 0);
+    for (uint32_t i = 0; i < N; ++i)
+        expected[i] = 0;
+    scc_expect_partition(g, expected, N, 1);
+
+    free(expected);
+    graph_free(g);
+}
+
+/* 18. Repeated calls; adding an edge changes the SCC partition. */
+static void test_scc_repeat_and_mutate(void)
+{
+    const scc_test_edge_t edges[] = {
+        {0, 1, 1}, {1, 0, 1}, {1, 2, 1}
+    };
+    const uint32_t before[] = {0, 0, 1, 2};
+    const uint32_t after[]  = {0, 0, 0, 1};
+    graph_inst_t *g = scc_make_graph(4, edges, SCC_COUNT(edges));
+
+    scc_expect_partition(g, before, 4, 3);
+    scc_expect_partition(g, before, 4, 3);
+    scc_add_edge(g, 2, 0);
+    scc_expect_partition(g, after, 4, 2);
+
+    graph_free(g);
+}
+
+/* 19. Only directed graphs are accepted by the agreed API. */
+static void test_scc_reject_undirected(void)
+{
+    graph_inst_t *g = graph_create(GRAPH_UNDIRECTED);
+    CHECK(g != NULL);
+    CHECK(add_vertex(g) == 0);
+    CHECK(add_vertex(g) == 1);
+    scc_add_edge(g, 0, 1);
+
+    uint32_t marker = UINT32_MAX;
+    uint32_t *components = &marker;
+    uint32_t n = UINT32_MAX;
+    uint32_t count = UINT32_MAX;
+
+    CHECK(ga_find_scc(g, &components, &n, &count)
+          == GA_ERROR_UNSUPPORTED_GRAPH);
+    CHECK(components == NULL);
+    CHECK(n == 0);
+    CHECK(count == 0);
+    graph_free(g);
+}
+
+/* 20. Invalid pointers and empty graph do not leak uninitialized outputs. */
+static void test_scc_invalid_args(void)
+{
+    graph_inst_t *g = scc_make_graph(2, NULL, 0);
+    uint32_t marker = UINT32_MAX;
+    uint32_t *components = &marker;
+    uint32_t n = 777;
+    uint32_t count = 777;
+
+    CHECK(ga_find_scc(NULL, &components, &n, &count) == GA_ERROR_BAD_ARG);
+    CHECK(ga_find_scc(g, NULL, &n, &count) == GA_ERROR_BAD_ARG);
+    CHECK(ga_find_scc(g, &components, NULL, &count) == GA_ERROR_BAD_ARG);
+    CHECK(ga_find_scc(g, &components, &n, NULL) == GA_ERROR_BAD_ARG);
+
+    /* When output pointers are valid, an empty directed graph returns 0/NULL. */
+    graph_free(g);
+    g = scc_make_graph(0, NULL, 0);
+    CHECK(ga_find_scc(g, &components, &n, &count) == GA_STATUS_OK);
+    CHECK(components == NULL);
+    CHECK(n == 0);
+    CHECK(count == 0);
+    graph_free(g);
+}
+
+/* 21. Compare against independent reachability-based oracle on small graphs.
+ * Floyd-Warshall computes reachability, not Kosaraju's finishing order. */
+static void test_scc_deterministic_random(void)
+{
+    enum { N = 24, CASES = 5 };
+    uint32_t rng = UINT32_C(0xC0FFEE);
+
+    for (uint32_t t = 0; t < CASES; ++t) {
+        bool reach[N][N] = {{false}};
+        graph_inst_t *g = scc_make_graph(N, NULL, 0);
+
+        for (uint32_t i = 0; i < N; ++i)
+            reach[i][i] = true;
+
+        for (uint32_t i = 0; i < N; ++i) {
+            for (uint32_t j = 0; j < N; ++j) {
+                if (i == j)
+                    continue;
+                rng = rng * UINT32_C(1664525) + UINT32_C(1013904223);
+                if ((rng % 100U) < (6U + 6U * t)) {
+                    scc_add_edge(g, i, j);
+                    reach[i][j] = true;
+                }
+            }
+        }
+
+        for (uint32_t k = 0; k < N; ++k)
+            for (uint32_t i = 0; i < N; ++i)
+                for (uint32_t j = 0; j < N; ++j)
+                    if (reach[i][k] && reach[k][j])
+                        reach[i][j] = true;
+
+        uint32_t *components = NULL;
+        uint32_t n = UINT32_MAX, groups = UINT32_MAX;
+        CHECK(ga_find_scc(g, &components, &n, &groups) == GA_STATUS_OK);
+        CHECK(components != NULL);
+        CHECK(n == N);
+        CHECK(groups >= 1 && groups <= N);
+
+        for (uint32_t i = 0; i < N; ++i) {
+            CHECK(components[i] < groups);
+            for (uint32_t j = 0; j < N; ++j) {
+                bool same_scc = reach[i][j] && reach[j][i];
+                CHECK((components[i] == components[j]) == same_scc);
+            }
+        }
+
+        /* Every reported component ID must be used by at least one vertex. */
+        for (uint32_t id = 0; id < groups; ++id) {
+            bool seen = false;
+            for (uint32_t i = 0; i < N; ++i)
+                if (components[i] == id)
+                    seen = true;
+            CHECK(seen);
+        }
+
+        free(components);
+        graph_free(g);
+    }
+}
+
+static void run_scc_tests(void)
+{
+    RUN_TEST(test_scc_empty);
+    RUN_TEST(test_scc_single_vertex);
+    RUN_TEST(test_scc_isolated);
+    RUN_TEST(test_scc_one_way_edge);
+    RUN_TEST(test_scc_chain);
+    RUN_TEST(test_scc_triangle);
+    RUN_TEST(test_scc_mutual_pair);
+    RUN_TEST(test_scc_three_groups);
+    RUN_TEST(test_scc_reverse_bridge);
+    RUN_TEST(test_scc_diamond);
+    RUN_TEST(test_scc_disconnected);
+    RUN_TEST(test_scc_cycle_between_groups);
+    RUN_TEST(test_scc_branching_condensation);
+    RUN_TEST(test_scc_weighted);
+    RUN_TEST(test_scc_large_fanout);
+    RUN_TEST(test_scc_dense);
+    RUN_TEST(test_scc_long_chain_then_cycle);
+    RUN_TEST(test_scc_repeat_and_mutate);
+    RUN_TEST(test_scc_reject_undirected);
+    RUN_TEST(test_scc_invalid_args);
+    RUN_TEST(test_scc_deterministic_random);
+    puts("All SCC (Kosaraju) tests passed!");
+}
+
 
 int main(void)
 {
@@ -2055,6 +2548,9 @@ int main(void)
 
     puts("\n=== Directed DFS Cycle Tests ===");
     run_directed_cycle_tests();
+
+    puts("\n=== Kosaraju SCC Tests ===");
+    run_scc_tests();
     
     return EXIT_SUCCESS;
 }

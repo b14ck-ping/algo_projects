@@ -40,5 +40,6 @@ ga_status_t ga_topological_sort(graph_inst_t *graph,
                                 size_t *out_count
                             );
 
-
+ga_status_t ga_find_scc(graph_inst_t *graph, uint32_t **out_components,
+                            uint32_t *out_vertices_count, uint32_t *out_components_count);
 #endif // GRAPH_ALGORITHMS_H

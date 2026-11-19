@@ -746,9 +746,6 @@ static ga_status_t ga_has_cycle_directed(graph_inst_t *graph, bool *out_has_cycl
 
     *out_has_cycle = false;
 
-    graph_type_t type;
-    graph_get_type(graph, &type);
-
     uint32_t vertices_cnt = 0;
     if(graph_get_vertices_cnt(graph, &vertices_cnt))
         return GA_ERROR_BAD_GRAPH;
@@ -825,6 +822,211 @@ free_exit:
     stack_free(stk);  
     free(colors);  
     free(frames);
+
+    return ret_val;
+}
+
+ga_status_t ga_find_scc(graph_inst_t *graph, uint32_t **out_components,
+                            uint32_t *out_vertices_count, uint32_t *out_components_count)
+{
+    ga_status_t ret_val = GA_STATUS_OK;
+    if (!graph || !out_components || !out_vertices_count || !out_components_count)
+        return GA_ERROR_BAD_ARG;
+
+    *out_components = NULL;
+    *out_vertices_count = 0;
+    *out_components_count = 0;
+
+    graph_type_t type;
+    graph_get_type(graph, &type);
+
+    if (type != GRAPH_DIRECTED)
+        return GA_ERROR_UNSUPPORTED_GRAPH;
+
+    uint32_t vertices_cnt = 0;
+    if(graph_get_vertices_cnt(graph, &vertices_cnt))
+        return GA_ERROR_BAD_GRAPH;
+
+    if(!vertices_cnt)
+        return GA_STATUS_OK;
+
+    if(vertices_cnt == 1){
+        uint32_t *out = malloc(sizeof(uint32_t));
+        if (!out)
+            return GA_ERROR_MEMALLOC;
+        out[0] = 0;
+        *out_components = out;
+        *out_vertices_count = 1;
+        *out_components_count = 1;
+        return GA_STATUS_OK;
+    }
+
+    uint32_t *components = calloc(vertices_cnt, sizeof(uint32_t));
+    if(!components)
+        return GA_ERROR_MEMALLOC;
+
+    uint32_t *vtx_ids = calloc(vertices_cnt, sizeof(*vtx_ids));
+    if(!vtx_ids){
+        free(components);
+        return GA_ERROR_MEMALLOC;
+    }
+
+    for(uint32_t i = 0; i < vertices_cnt; i++)
+        vtx_ids[i] = i;
+
+    struct stack *stk = stack_create(vertices_cnt);
+    if(!stk){
+        free(vtx_ids);
+        free(components);
+        return GA_ERROR_MEMALLOC;
+    }
+
+    memset(components, 0xFF, vertices_cnt*sizeof(*components));  
+
+    bool *visited = calloc(vertices_cnt, sizeof(*visited));
+    if(!visited){
+        free(vtx_ids);
+        free(components);
+        stack_free(stk);
+        return GA_ERROR_MEMALLOC;
+    }
+
+    uint32_t current_order_idx = 0;
+    uint32_t *finish_order = malloc(vertices_cnt * sizeof(*finish_order));
+    if(!finish_order){
+        free(vtx_ids);
+        free(components);
+        stack_free(stk);
+        free(visited);
+        return GA_ERROR_MEMALLOC;
+    }
+
+    dfs_frame_t *frames = calloc(vertices_cnt, sizeof(*frames));
+    if(!frames){
+        free(vtx_ids);
+        free(components);
+        stack_free(stk);
+        free(visited);
+        free(finish_order);
+        return GA_ERROR_MEMALLOC;
+    }
+
+    // First DFS
+    for (uint32_t i = 0; i < vertices_cnt; i++){
+        if (visited[i])
+            continue;
+
+        frames[i].vertex = i;
+        frames[i].next_neighbour = 0;
+        visited[i] = true;
+        stack_push(stk, &frames[i]);
+
+        while (!stack_is_empty(stk)){
+            dfs_frame_t *frame = stack_peek(stk);
+
+            const graph_edge_t *neighbours = NULL;
+            uint32_t neighbours_cnt = 0;
+            if (graph_get_neighbours(graph, frame->vertex, 
+                            &neighbours, &neighbours_cnt) != GRAPH_STATUS_OK){
+                ret_val = GA_ERROR_BAD_GRAPH;
+                goto free_exit;
+            }
+
+            if (frame->next_neighbour == neighbours_cnt){
+                finish_order[current_order_idx++] = frame->vertex;
+                stack_pop(stk);
+                continue;
+            }
+
+            uint32_t neighbour = neighbours[frame->next_neighbour].vertex_id;
+            frame->next_neighbour++;
+             
+            if(!visited[neighbour]){
+                frames[neighbour].vertex = neighbour;
+                frames[neighbour].next_neighbour = 0;
+                visited[neighbour] = true;
+                stack_push(stk, &frames[neighbour]);
+            }
+        }
+    }
+
+    // Transposing
+    graph_inst_t *t_graph = graph_create(GRAPH_DIRECTED);
+    for (uint32_t i = 0; i < vertices_cnt; i++){
+        uint32_t vertex_id = 0;
+        if (graph_add_vertex(t_graph, &vertex_id)){
+            ret_val = GA_ERROR_MEMALLOC;
+            graph_free(t_graph);
+            goto free_exit;
+        }
+    }
+
+    for (uint32_t u = 0; u < vertices_cnt; ++u) {
+        const graph_edge_t *neighbours = NULL;
+        uint32_t count = 0;
+
+        graph_get_neighbours(graph, u, &neighbours, &count);
+
+        for (uint32_t j = 0; j < count; ++j) {
+            uint32_t neighbour = neighbours[j].vertex_id;
+
+            if (graph_add_edge(t_graph, neighbour, u)){
+                ret_val = GA_ERROR_MEMALLOC;
+                graph_free(t_graph);
+                goto free_exit;
+            }
+        }
+    }
+
+    stack_free(stk);
+    stk = stack_create(vertices_cnt);
+
+    // Second DFS
+    uint32_t component_id = 0;
+    for (size_t i = vertices_cnt; i > 0; --i) {
+        uint32_t start = finish_order[i - 1];
+
+        if (components[start] != UINT32_MAX)
+            continue;
+
+        
+        stack_push(stk, &vtx_ids[start]);
+        components[start] = component_id;
+        while (!stack_is_empty(stk)){
+            uint32_t vertex = *(uint32_t*)stack_pop(stk);
+
+            const graph_edge_t *neighbours = NULL;
+            uint32_t neighbours_cnt = 0;
+            if (graph_get_neighbours(t_graph, vertex, 
+                            &neighbours, &neighbours_cnt) != GRAPH_STATUS_OK){
+                ret_val = GA_ERROR_BAD_GRAPH;
+                goto free_exit;
+            }
+
+            for (uint32_t j = 0; j < neighbours_cnt; ++j){
+                uint32_t neighbour = neighbours[j].vertex_id;
+                if (components[neighbour] == UINT32_MAX){
+                    components[neighbour] = component_id;
+                    stack_push(stk, &vtx_ids[neighbour]);
+                }
+            }
+        }
+        component_id++;
+    }
+
+    *out_components = components;
+    *out_vertices_count = vertices_cnt;
+    *out_components_count = component_id;
+
+    graph_free(t_graph);
+
+free_exit:
+    free(vtx_ids);
+    stack_free(stk);
+    free(visited);
+    free(finish_order);
+    free(frames);
+    
 
     return ret_val;
 }
